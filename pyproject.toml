@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "verity-guard"
+version = "0.1.0"
+description = "Fail-closed verify-before-you-act gate for AI agents. One-line adapters for LangChain, LangGraph, CrewAI, and the OpenAI Agents SDK. Signed receipts, pay-per-call via x402."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "VerityLayer" }]
+keywords = [
+    "ai", "agents", "guardrail", "verification", "fact-check", "prompt-injection",
+    "ai-safety", "x402", "agent-commerce", "langchain", "langgraph", "crewai",
+    "openai-agents", "signed-receipts", "trust", "fail-closed",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
+dependencies = ["httpx>=0.24"]
+
+[project.urls]
+Homepage = "https://veritylayer.dev"
+"Wire-in guide" = "https://veritylayer.dev/guard"
+Source = "https://github.com/meloliva14/verity-guard"
+
+[project.optional-dependencies]
+# Bring-your-own framework — adapters lazy-import these, so the base install stays tiny.
+langchain = ["langchain-core>=0.2"]
+langgraph = ["langgraph>=0.2"]
+crewai = ["crewai>=0.60"]
+openai-agents = ["openai-agents>=0.0.1"]
+# Convenience x402 payer (BYO wallet key). You can also pass any x402-wrapped client.
+x402 = ["x402>=0.1", "eth-account>=0.11"]
+all = ["langchain-core>=0.2", "langgraph>=0.2", "crewai>=0.60", "openai-agents>=0.0.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/verity_guard"]

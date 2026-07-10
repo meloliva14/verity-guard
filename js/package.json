@@ -1,0 +1,48 @@
+{
+  "name": "@veritylayer/guard",
+  "version": "0.1.0",
+  "description": "Fail-closed verify-before-you-act gate for AI agents. Keyless x402 client + Vercel AI SDK adapter. Signed, independently re-verifiable verdicts.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./vercel": {
+      "types": "./dist/vercel.d.ts",
+      "import": "./dist/vercel.js"
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai", "agents", "guardrail", "verification", "fact-check", "prompt-injection",
+    "ai-safety", "x402", "agent-commerce", "vercel-ai-sdk", "ai-sdk",
+    "signed-receipts", "trust", "fail-closed", "veritylayer"
+  ],
+  "author": "VerityLayer",
+  "license": "MIT",
+  "homepage": "https://veritylayer.dev/guard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meloliva14/verity-guard"
+  },
+  "peerDependencies": {
+    "ai": ">=3",
+    "zod": ">=3"
+  },
+  "peerDependenciesMeta": {
+    "ai": { "optional": true },
+    "zod": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0",
+    "zod": "^3.23.0"
+  }
+}

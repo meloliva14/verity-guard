@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# Node (js/ subpackage)
+js/node_modules/
+js/dist/
+js/*.tgz
+node_modules/
+
+# OS / editor
+.DS_Store
+*.swp
