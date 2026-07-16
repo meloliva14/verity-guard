@@ -154,10 +154,29 @@ export const GUARD_TOOL_DESCRIPTION =
   "allow / review / block with an honest risk score, concrete reasons, and a safer alternative when it " +
   "blocks — plus an Ed25519-signed, independently re-verifiable receipt. If it blocks, do NOT take the action.";
 
-/** Compact one-line summary an agent/LLM can read back. */
+const NOT_CHECKED = "No verdict exists — do not treat this as an allow.";
+
+/**
+ * Why `res` is not a usable verdict, or `undefined` if it is one.
+ *
+ * THE FAIL-CLOSED CHOKEPOINT. The obvious check is silently backwards: `blocked` is
+ * `decision === "block"`, and `decision` is undefined when the guard is unreachable and
+ * when a 402 was never settled — so `!res.blocked` reads TRUE in both cases and waves the
+ * unverified action through. Fail-closed means: proceed only on an affirmative verdict.
+ * No verdict, no action.
+ */
+export function verdictProblem(res: VerityResult): string | undefined {
+  if (res.paymentRequired) return `payment_required (${res.price}) — the check was never performed`;
+  if (res.raw.error) return `guard unreachable: ${String(res.raw.error)}`;
+  if (res.decision === undefined) return "guard returned no decision";
+  return undefined;
+}
+
+/** Compact one-line summary an agent/LLM can read back. Never reads like an allow when no verdict exists. */
 export function formatVerdict(res: VerityResult): string {
-  if (res.paymentRequired) return `[verity] payment_required (${res.price}) — settle via x402 and retry.`;
-  if (res.raw.error) return `[verity] error: ${String(res.raw.error)}`;
+  if (res.paymentRequired)
+    return `[verity] NOT CHECKED — payment_required (${res.price}); settle via x402 and retry. ${NOT_CHECKED}`;
+  if (res.raw.error) return `[verity] NOT CHECKED — error: ${String(res.raw.error)}. ${NOT_CHECKED}`;
   const parts = [`[verity] decision=${res.decision}`, `risk=${res.risk}`];
   if (res.reasons.length) parts.push("reasons: " + res.reasons.slice(0, 4).map(String).join("; "));
   if (res.blocked && res.saferAlternative) parts.push("safer_alternative: " + res.saferAlternative);

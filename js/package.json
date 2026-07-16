@@ -1,6 +1,6 @@
 {
   "name": "@veritylayer/guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fail-closed verify-before-you-act gate for AI agents. Keyless x402 client + Vercel AI SDK adapter. Signed, independently re-verifiable verdicts.",
   "type": "module",
   "main": "dist/index.js",
@@ -15,15 +15,32 @@
       "import": "./dist/vercel.js"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node --test \"test/*.test.mjs\""
   },
   "keywords": [
-    "ai", "agents", "guardrail", "verification", "fact-check", "prompt-injection",
-    "ai-safety", "x402", "agent-commerce", "vercel-ai-sdk", "ai-sdk",
-    "signed-receipts", "trust", "fail-closed", "veritylayer"
+    "ai",
+    "agents",
+    "guardrail",
+    "verification",
+    "fact-check",
+    "prompt-injection",
+    "ai-safety",
+    "x402",
+    "agent-commerce",
+    "vercel-ai-sdk",
+    "ai-sdk",
+    "signed-receipts",
+    "trust",
+    "fail-closed",
+    "veritylayer"
   ],
   "author": "VerityLayer",
   "license": "MIT",
@@ -37,8 +54,12 @@
     "zod": ">=3"
   },
   "peerDependenciesMeta": {
-    "ai": { "optional": true },
-    "zod": { "optional": true }
+    "ai": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

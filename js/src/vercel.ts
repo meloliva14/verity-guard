@@ -15,7 +15,7 @@
  */
 import { z } from "zod";
 
-import { GUARD_TOOL_DESCRIPTION, VerityClient, VerityResult, formatVerdict } from "./index.js";
+import { GUARD_TOOL_DESCRIPTION, VerityClient, VerityResult, formatVerdict, verdictProblem } from "./index.js";
 
 export interface VercelToolOpts {
   tier?: "quick" | "standard" | "pro";
@@ -82,8 +82,12 @@ export interface GuardToolCallInput {
 }
 
 export interface GuardToolCallResult {
+  /** TRUE only on an affirmative, non-blocking verdict. Never true when no verdict exists. */
   allowed: boolean;
   blocked: boolean;
+  /** Set when NO verdict was produced (unreachable / unsettled 402 / no decision). If this is
+   *  set, `allowed` is false and the tool must not run — the check did not happen. */
+  problem?: string;
   result: VerityResult;
   summary: string;
 }
@@ -91,6 +95,15 @@ export interface GuardToolCallResult {
 /**
  * Pure per-tool-call gate for `experimental_prepareStep` or a manual pre-execute hook.
  * Guards the ARGUMENTS of a pending tool call — the highest-frequency wire-in.
+ *
+ * Fail-closed. This used to return `allowed: !res.blocked`, which is the fail-OPEN formula:
+ * `blocked` is `decision === "block"`, so it is false when the guard is unreachable and when
+ * a 402 was never settled — meaning `allowed` came back TRUE and the caller ran the tool with
+ * nothing verified, in the one function documented as "the gate". Now a missing verdict is
+ * never permission: `allowed` requires a real verdict that did not block.
+ *
+ * `review` still proceeds by default (only `block` stops), matching the documented behavior —
+ * inspect `result.decision === "review"` if you want to escalate those to a human.
  */
 export async function guardToolCall(client: VerityClient, input: GuardToolCallInput): Promise<GuardToolCallResult> {
   let argStr: string;
@@ -99,5 +112,12 @@ export async function guardToolCall(client: VerityClient, input: GuardToolCallIn
     policy: input.policy,
     tier: input.tier ?? "quick",
   });
-  return { allowed: !res.blocked, blocked: res.blocked, result: res, summary: formatVerdict(res) };
+  const problem = verdictProblem(res);
+  return {
+    allowed: !problem && !res.blocked,
+    blocked: res.blocked,
+    problem,
+    result: res,
+    summary: formatVerdict(res),
+  };
 }
