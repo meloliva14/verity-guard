@@ -33,6 +33,61 @@ class BlockedAction(Exception):
         super().__init__(f"VerityLayer blocked this action (risk={result.risk}). Safer: {safer}")
 
 
+class GuardUnavailable(Exception):
+    """Raised when guard_action did not return a usable verdict, so the action MUST NOT run.
+
+    This is the exception that makes "fail-closed" true in code instead of only in the
+    README. A guard that could not answer is not the same as a guard that said yes.
+    """
+
+    def __init__(self, result: Any, problem: str) -> None:
+        self.result = result
+        self.problem = problem
+        super().__init__(
+            f"VerityLayer could not produce a verdict ({problem}). Fail-closed: the guarded "
+            f"action was NOT taken. Resolve the guard or seek human approval before retrying."
+        )
+
+
+def _close_awaitable(res: Any) -> None:
+    """Best-effort close of an un-awaited coroutine so it doesn't emit a RuntimeWarning
+    on GC. Cosmetic only — the fail-closed decision has already been made by then."""
+    close = getattr(res, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
+def verdict_problem(res: Any) -> Optional[str]:
+    """Return why ``res`` is not a usable verdict, or ``None`` if it is one.
+
+    THE FAIL-CLOSED CHOKEPOINT. Every enforcement path must call this before it decides
+    to run anything, because the obvious check is silently backwards:
+
+        ``VerityResult.blocked`` is ``decision == "block"``, and ``decision`` is ``None``
+        for a network error, for an unsettled 402, and for an un-awaited coroutine. So
+        ``if res.blocked:`` reads False in all three cases and falls through to *execute*
+        the very action nobody verified. That is fail-OPEN — the exact opposite of what
+        this product sells.
+
+    Fail-closed means: proceed only on an affirmative verdict. No verdict => no action.
+    """
+    if inspect.isawaitable(res):
+        return ("guard returned an un-awaited coroutine — an async client was used on a "
+                "synchronous path; use the async API (aguard/ainvoke) or a sync VerityClient")
+    if not isinstance(res, VerityResult):
+        return f"guard returned {type(res).__name__}, not a VerityResult"
+    if res.payment_required:
+        return f"payment_required ({res.price}) — the check was never performed"
+    if res.get("error"):
+        return f"guard unreachable: {res.get('error')}"
+    if res.decision is None:
+        return "guard returned no decision"
+    return None
+
+
 def format_verdict(res: VerityResult) -> str:
     """Compact one-line summary an agent/LLM can read back."""
     if res.payment_required:
@@ -81,6 +136,10 @@ def guard(client: Any, *, policy: Optional[str] = None, tier: str = "quick",
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             action = describe(*args, **kwargs) if describe else describe_call(fn.__name__, args, kwargs)
             res = client.guard(action, policy=policy, tier=tier)
+            problem = verdict_problem(res)
+            if problem:  # no verdict is NOT permission to proceed
+                _close_awaitable(res)
+                raise GuardUnavailable(res, problem)
             if res.blocked:
                 if on_block == "return":
                     return format_verdict(res)
@@ -98,6 +157,9 @@ def aguard(client: Any, *, policy: Optional[str] = None, tier: str = "quick",
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             action = describe(*args, **kwargs) if describe else describe_call(fn.__name__, args, kwargs)
             res = await _guard_any(client, action, context=None, policy=policy, tier=tier)
+            problem = verdict_problem(res)
+            if problem:  # no verdict is NOT permission to proceed
+                raise GuardUnavailable(res, problem)
             if res.blocked:
                 if on_block == "return":
                     return format_verdict(res)

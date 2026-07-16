@@ -24,9 +24,17 @@ from .client import (
     VerityError,
     VerityResult,
 )
-from .decorators import BlockedAction, GUARD_TOOL_DESC, aguard, format_verdict, guard
+from .decorators import (
+    BlockedAction,
+    GUARD_TOOL_DESC,
+    GuardUnavailable,
+    aguard,
+    format_verdict,
+    guard,
+    verdict_problem,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "VerityClient",
@@ -34,6 +42,8 @@ __all__ = [
     "VerityResult",
     "VerityError",
     "BlockedAction",
+    "GuardUnavailable",
+    "verdict_problem",
     "guard",
     "aguard",
     "format_verdict",

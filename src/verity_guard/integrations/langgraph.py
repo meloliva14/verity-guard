@@ -16,10 +16,11 @@ ToolMessage, preserving LangGraph's tool-call invariant.
 """
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Any, Optional
 
-from ..decorators import _guard_any
+from ..decorators import GuardUnavailable, _close_awaitable, _guard_any, verdict_problem
 
 
 def _messages_of(state: Any) -> list:
@@ -66,46 +67,58 @@ class GuardedToolNode:
         except Exception as e:  # surface tool errors as a tool result, don't crash the graph
             return f"error running {name}: {str(e)[:200]}"
 
-    # -- sync path --
-    def invoke(self, state: Any, config: Any = None) -> dict:
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(self.ainvoke(state, config)) \
-            if False else self._invoke_sync(state)
+    def _gate(self, res: Any, name: str, args: dict, cid: str) -> Any:
+        """Fail-closed decision for ONE proposed tool call.
 
-    def _invoke_sync(self, state: Any) -> dict:
+        The tool runs only on a real, non-blocking verdict. Every other outcome — the
+        guard unreachable, an unsettled 402, a missing decision — returns a ToolMessage
+        and does NOT execute. A guard that could not answer is not a guard that said yes.
+        """
+        problem = verdict_problem(res)
+        if problem:
+            if inspect.isawaitable(res):
+                # Misuse (async client on the sync path). Fail LOUD — silently degrading
+                # here is what let a `block` verdict execute anyway.
+                _close_awaitable(res)
+                raise GuardUnavailable(res, problem)
+            return self._tool_message(
+                f"NOT EXECUTED — VerityLayer could not verify this action ({problem}). "
+                f"Fail-closed: the tool was not run. Resolve the guard or get human approval.",
+                cid, name)
+        if self._blocked(res):
+            safer = res.safer_alternative or "revise or seek human approval before retrying."
+            return self._tool_message(
+                f"BLOCKED by VerityLayer (risk={res.risk}). Do not take this action. Safer: {safer}",
+                cid, name)
+        return self._tool_message(self._run_tool(name, args), cid, name)
+
+    @staticmethod
+    def _calls_of(state: Any) -> list:
         msgs = _messages_of(state)
         last = msgs[-1] if msgs else None
-        calls = getattr(last, "tool_calls", None) or []
+        return getattr(last, "tool_calls", None) or []
+
+    # -- sync path --
+    def invoke(self, state: Any, config: Any = None) -> dict:
+        return self._invoke_sync(state)
+
+    def _invoke_sync(self, state: Any) -> dict:
         out = []
-        for c in calls:
+        for c in self._calls_of(state):
             name, args, cid = c["name"], (c.get("args") or {}), c["id"]
-            res = self._client.guard(_action_str(name, args), context=None, policy=self._policy, tier=self._tier)
-            if getattr(res, "blocked", False) or (self._review_blocks and getattr(res, "decision", None) == "review"):
-                safer = res.safer_alternative or "revise or seek human approval before retrying."
-                out.append(self._tool_message(
-                    f"BLOCKED by VerityLayer (risk={res.risk}). Do not take this action. Safer: {safer}",
-                    cid, name))
-            else:
-                out.append(self._tool_message(self._run_tool(name, args), cid, name))
+            res = self._client.guard(_action_str(name, args), context=None,
+                                     policy=self._policy, tier=self._tier)
+            out.append(self._gate(res, name, args, cid))
         return {"messages": out}
 
     # -- async path (works with sync or async client) --
     async def ainvoke(self, state: Any, config: Any = None) -> dict:
-        msgs = _messages_of(state)
-        last = msgs[-1] if msgs else None
-        calls = getattr(last, "tool_calls", None) or []
         out = []
-        for c in calls:
+        for c in self._calls_of(state):
             name, args, cid = c["name"], (c.get("args") or {}), c["id"]
             res = await _guard_any(self._client, _action_str(name, args), context=None,
                                    policy=self._policy, tier=self._tier)
-            if self._blocked(res):
-                safer = res.safer_alternative or "revise or seek human approval before retrying."
-                out.append(self._tool_message(
-                    f"BLOCKED by VerityLayer (risk={res.risk}). Do not take this action. Safer: {safer}",
-                    cid, name))
-            else:
-                out.append(self._tool_message(self._run_tool(name, args), cid, name))
+            out.append(self._gate(res, name, args, cid))
         return {"messages": out}
 
     # LangGraph calls nodes as plain callables too.
