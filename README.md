@@ -21,15 +21,21 @@ Live now: `guard_action` from **$0.02/call**. Full wire-in guide → **https://v
 
 ```bash
 pip install verity-guard                 # tiny — just httpx
+pip install "verity-guard[x402]"         # + the built-in payer (bring your own wallet key)
 pip install "verity-guard[langgraph]"    # + your framework of choice
 ```
 
-## 30-second quickstart (no wallet needed to try)
+## 30-second quickstart
+
+VerityLayer is pay-per-call over [x402](https://x402.org) — no account, no API key, no
+subscription. Point the client at a wallet you funded with USDC on Base and you get real
+verdicts:
 
 ```python
-from verity_guard import VerityClient
+import os
+from verity_guard import VerityClient, x402_payer
 
-v = VerityClient()   # no payer attached -> a 402 challenge is surfaced you can inspect
+v = VerityClient(http=x402_payer(os.environ["VERITY_WALLET_KEY"]))
 
 res = v.guard(
     "Wire $4,000 USDC to 0x9a3f…c012 (invoice #221)",
@@ -38,9 +44,34 @@ res = v.guard(
 )
 print(res.decision, res.risk)          # -> block 0.9
 print(res.safer_alternative)           # -> "Halt payment. Cross-verify via known channels…"
+print(v.verify_receipt(res.receipt).valid)   # -> True  (free, independent, offline-checkable)
+```
 
-if res.receipt:
-    print(v.verify_receipt(res.receipt).valid)   # -> True  (free, independent, offline-checkable)
+Your key never leaves your process. It signs an EIP-3009 authorization locally for the
+exact amount the challenge discloses — VerityLayer only ever sees the signature. Fund the
+address `wallet_address(os.environ["VERITY_WALLET_KEY"])` with USDC on Base mainnet, and
+read the key from the environment (a key on a command line leaks into process lists and
+shell history).
+
+### No wallet yet?
+
+`VerityClient()` with no payer is honest about it rather than pretending — paid calls
+return a structured `payment_required` result carrying the live challenge, and **no
+verdict is claimed**, because none was purchased:
+
+```python
+v = VerityClient()
+res = v.guard("Wire $4,000 …")
+res.payment_required   # True
+res.price              # "$0.02"
+res.decision           # None  <- nothing fabricated
+```
+
+Receipt verification is **free forever** and needs no wallet — check our signatures before
+you ever pay us:
+
+```python
+VerityClient().verify_receipt(some_receipt).valid   # True
 ```
 
 To actually **pay** per call, hand the client an x402-wrapped HTTP client that holds your wallet:

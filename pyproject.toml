@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "verity-guard"
-version = "0.1.1"
+version = "0.2.0"
 description = "Fail-closed verify-before-you-act gate for AI agents. One-line adapters for LangChain, LangGraph, CrewAI, and the OpenAI Agents SDK. Signed receipts, pay-per-call via x402."
 readme = "README.md"
 requires-python = ">=3.9"
