@@ -88,12 +88,26 @@ def verdict_problem(res: Any) -> Optional[str]:
     return None
 
 
-def format_verdict(res: VerityResult) -> str:
-    """Compact one-line summary an agent/LLM can read back."""
+_NOT_CHECKED = "No verdict exists — do not treat this as an allow."
+
+
+def format_verdict(res: Any) -> str:
+    """Compact one-line summary an agent/LLM can read back.
+
+    Defensive on purpose. This string is handed straight to a model, so it must (a) never
+    raise — it used to explode on ``res.payment_required`` when a sync tool path was given
+    an async client and got an un-awaited coroutine — and (b) never read like an allow when
+    no verdict was produced.
+    """
+    if inspect.isawaitable(res) or not isinstance(res, VerityResult):
+        problem = verdict_problem(res)
+        _close_awaitable(res)
+        return f"[verity] NOT CHECKED — {problem}. {_NOT_CHECKED}"
     if res.payment_required:
-        return f"[verity] payment_required ({res.price}) — settle via x402 and retry."
+        return (f"[verity] NOT CHECKED — payment_required ({res.price}); settle via x402 "
+                f"and retry. {_NOT_CHECKED}")
     if res.get("error"):
-        return f"[verity] error: {res.get('error')}"
+        return f"[verity] NOT CHECKED — error: {res.get('error')}. {_NOT_CHECKED}"
     parts = [f"[verity] decision={res.decision}", f"risk={res.risk}"]
     if res.reasons:
         parts.append("reasons: " + "; ".join(str(r) for r in res.reasons[:4]))

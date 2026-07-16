@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, Type
 
-from ..decorators import GUARD_TOOL_DESC, format_verdict
+from ..decorators import GUARD_TOOL_DESC, _guard_any, format_verdict
 
 
 def build_guard_tool(client: Any, *, tier: str = "quick",
@@ -35,6 +35,11 @@ def build_guard_tool(client: Any, *, tier: str = "quick",
         def _run(self, action: str, context: str = "", policy: str = "") -> str:
             res = client.guard(action, context=context or None,
                                policy=policy or default_policy, tier=tier)
+            return format_verdict(res)  # honest (non-raising) on an un-awaited coroutine
+
+        async def _arun(self, action: str, context: str = "", policy: str = "") -> str:
+            res = await _guard_any(client, action, context=context or None,
+                                   policy=policy or default_policy, tier=tier)
             return format_verdict(res)
 
     return VerityGuardTool()
@@ -60,6 +65,13 @@ def build_verify_tool(client: Any, *, tier: str = "grounded") -> Any:
 
         def _run(self, claim: str, context: str = "") -> str:
             res = client.verify(claim, context=context or None, tier=tier)
+            return format_verdict(res)
+
+        async def _arun(self, claim: str, context: str = "") -> str:
+            import inspect
+            res = client.verify(claim, context=context or None, tier=tier)
+            if inspect.isawaitable(res):
+                res = await res
             return format_verdict(res)
 
     return VerityVerifyTool()
