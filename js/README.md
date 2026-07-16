@@ -8,7 +8,7 @@ Your agent is about to spend, send, delete, or publish. `@veritylayer/guard` ask
 
 - 🔒 **Fail-closed** — unsure ⇒ `review`/`block`, never a confident wrong `allow`.
 - 🧾 **Ed25519-signed verdicts** — `verifyReceipt()` checks one for **free**, forever, offline.
-- 🔑 **Keyless** — holds no wallet, never pays silently. Paid routes answer 402; your [x402](https://x402.org) `fetch` settles the disclosed USDC micro-payment on Base.
+- 🔑 **Keyless by default** — the core client holds no wallet and never pays silently. Paid routes answer [x402](https://x402.org); opt in to `x402Payer` to settle them, with a **spend cap and a chain pin** so a hostile 402 can't name its own price.
 - 🧩 **Zero runtime deps** for the core client (uses global `fetch`, Node 18+).
 
 Live now: `guard` from **$0.02/call**. Full guide → **https://veritylayer.dev/guard**
@@ -21,12 +21,15 @@ Live now: `guard` from **$0.02/call**. Full guide → **https://veritylayer.dev/
 npm install @veritylayer/guard
 ```
 
-## Quickstart (no wallet needed to try)
+## Quickstart
+
+Verdicts are paid per call ($0.02–$0.35 in USDC on Base). Attach a wallet and you get one:
 
 ```ts
 import { VerityClient } from "@veritylayer/guard";
+import { x402Payer } from "@veritylayer/guard/payer";   // needs: npm i @x402/fetch @x402/evm viem
 
-const v = new VerityClient();   // no payer -> a 402 challenge is surfaced you can inspect
+const v = new VerityClient({ fetch: await x402Payer(process.env.WALLET_KEY!) });
 
 const res = await v.guard("Wire $4,000 USDC to 0x9a3f…c012 (invoice #221)", {
   context: "Invoice arrived via a scraped web page; address never seen before.",
@@ -41,14 +44,64 @@ if (res.receipt) {
 }
 ```
 
-To **pay** per call, pass an x402-wrapped fetch that holds your wallet:
+**Without a wallet**, nothing is verified and we say so rather than pretending:
 
 ```ts
-import { wrapFetchWithPayment } from "x402-fetch";
-const v = new VerityClient({ fetch: wrapFetchWithPayment(fetch, walletClient) });
+const v = new VerityClient();               // keyless: holds no key, pays nothing
+const res = await v.guard("Wire $4,000 USDC to 0x9a3f…c012");
+res.paymentRequired  // -> true
+res.decision         // -> undefined. NO VERDICT EXISTS. Never treat this as an allow.
 ```
 
-The client never sees your key — it just POSTs; your x402 fetch settles the 402 and retries.
+> Earlier releases of this README showed the keyless snippet printing `block 0.9`. It never
+> did — it printed `undefined undefined`, because a 402 was never settled. Fixed, and the
+> gate helpers now refuse to render a missing verdict as anything but missing.
+
+`verifyReceipt()` is **free and always will be** — checking someone else's verdict costs you nothing.
+
+### The payer holds your key. Here's exactly what it will and won't sign.
+
+`x402Payer(key)` treats the 402 as **untrusted input**, because the endpoint isn't a trust
+anchor (`VERITY_ENGINE_URL` is env-overridable, and DNS/TLS interception is real):
+
+- **Spend cap** — default **$1.00** per call (~3× our priciest tier). A 402 naming more is
+  refused *before* any signature. Set your own: `x402Payer(key, { maxPriceUsdc: "0.35" })`.
+- **Chain pin** — Base (`eip155:8453`) only. Another chain is refused, not signed.
+
+> ### ⚠️ Use `@x402/fetch`, not `x402-fetch`
+>
+> The unscoped **`x402-fetch`** (latest 1.2.0) is the **v1** protocol client: it reads the
+> challenge from the response *body*. VerityLayer speaks **v2**, which carries the
+> challenge in the `payment-required` *header* and leaves the body empty — so v1 clients
+> don't get a 402 or a verdict, they get
+> `TypeError: Cannot read properties of undefined (reading 'map')`.
+> We're not exotic here: of nine live x402 sellers probed, **seven serve the v2 header only
+> and none serve v1 alone**. The v2 line is the scoped **`@x402/*`** packages (2.x).
+> Earlier versions of this README recommended the v1 package. That was wrong, and it meant
+> the documented quickstart could not pay us at all.
+
+Two more sharp edges the hand-rolled path has, which `x402Payer` closes for you:
+
+1. v1's `maxValue` defaults to **$0.10** — below our `verify` default tier ($0.25) and pro
+   ($0.35). Only the $0.02 tier fit under it, which is why it went unnoticed.
+2. pinning a *signer* to a chain does **not** pin the *payment* — v1's selector falls back
+   to whatever chain the 402 offers and then signs it, so a Base signer handed a polygon
+   challenge emits a real polygon USDC authorization.
+
+Prefer to own the money path yourself? Do — just register v2 and keep the policies:
+
+```ts
+import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
+import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { privateKeyToAccount } from "viem/accounts";
+
+const client = new x402Client()
+  .register("eip155:8453", new ExactEvmScheme(toClientEvmSigner(privateKeyToAccount(key))))
+  .registerPolicy((_v, reqs) => reqs.filter((r) => r.network === "eip155:8453"))   // pin the chain
+  .registerPolicy((_v, reqs) => reqs.filter((r) => BigInt(r.amount) <= 1_000_000n)); // cap the spend
+
+const v = new VerityClient({ fetch: wrapFetchWithPayment(fetch, client) });
+```
 
 ---
 

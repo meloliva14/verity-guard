@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "verity-guard"
-version = "0.2.1"
+version = "0.2.2"
 description = "Fail-closed verify-before-you-act gate for AI agents. One-line adapters for LangChain, LangGraph, CrewAI, and the OpenAI Agents SDK. Signed receipts, pay-per-call via x402."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -37,7 +37,13 @@ langgraph = ["langgraph>=0.2"]
 crewai = ["crewai>=0.60"]
 openai-agents = ["openai-agents>=0.0.1"]
 # Convenience x402 payer (BYO wallet key). You can also pass any x402-wrapped client.
-x402 = ["x402>=0.1", "eth-account>=0.11"]
+# FLOOR IS 2.15, NOT >=0.1: the x402 1.x/0.x line is the *v1 protocol* (challenge in the
+# response body). VerityLayer speaks v2 (challenge in the `payment-required` header, empty
+# body), so a v1 client cannot read our 402 at all — and none of the APIs payer.py imports
+# (x402ClientSync, client_base.max_amount, mechanisms.evm) exist before 2.x. `>=0.1` let
+# pip satisfy this extra with a client that could never pay us. 2.15.0 is the version the
+# payer is verified against live, and the version the engine pins.
+x402 = ["x402>=2.15,<3", "eth-account>=0.11"]
 all = ["langchain-core>=0.2", "langgraph>=0.2", "crewai>=0.60", "openai-agents>=0.0.1"]
 
 [tool.hatch.build.targets.wheel]
