@@ -23,7 +23,21 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from ..decorators import GUARD_TOOL_DESC, _guard_any, format_verdict
+from ..decorators import GUARD_TOOL_DESC, _guard_any, format_verdict, verdict_problem
+
+
+def _no_verdict_info(problem: str) -> dict:
+    """What a guardrail reports when the check did not happen.
+
+    Fail-closed: a guardrail that cannot verify must TRIP, not wave the action through.
+    ``res.blocked`` is False for a network error and for an unsettled 402, so trusting it
+    alone silently turns every guardrail here into a no-op at exactly the wrong moment.
+    """
+    return {
+        "verity_error": problem,
+        "decision": None,
+        "note": "The check did not complete. Fail-closed: treated as unsafe, not allowed.",
+    }
 
 
 def build_guard_tool(client: Any, *, tier: str = "quick",
@@ -31,14 +45,20 @@ def build_guard_tool(client: Any, *, tier: str = "quick",
     """Return an OpenAI-Agents ``function_tool`` the agent can call before acting."""
     from agents import function_tool
 
-    @function_tool
     async def verity_guard_action(action: str, context: str = "", policy: str = "") -> str:
         res = await _guard_any(client, action, context=context or None,
                                policy=policy or default_policy, tier=tier)
-        return format_verdict(res)
+        return format_verdict(res)  # already honest about errors / payment_required
 
+    # The description IS the wire-in for a discretionary tool: an empty one means the model
+    # never calls it. @function_tool reads the docstring AT DECORATION, so setting __doc__
+    # afterwards (as this used to) could leave the tool with no description at all. Set it
+    # first, and also pass description_override where the installed SDK supports it.
     verity_guard_action.__doc__ = GUARD_TOOL_DESC
-    return verity_guard_action
+    try:
+        return function_tool(verity_guard_action, description_override=GUARD_TOOL_DESC)
+    except TypeError:  # older SDKs without description_override
+        return function_tool(verity_guard_action)
 
 
 def build_output_guardrail(client: Any, *, mode: str = "guard", tier: str = "quick",
@@ -58,12 +78,15 @@ def build_output_guardrail(client: Any, *, mode: str = "guard", tier: str = "qui
             import inspect
             if inspect.isawaitable(res):
                 res = await res
-            tripwire = res.decision == "unsupported"
+            problem = verdict_problem(res)
+            tripwire = True if problem else res.decision == "unsupported"
         else:
             res = await _guard_any(client, text, context="final agent output",
                                    policy=policy, tier=tier)
-            tripwire = res.blocked
-        return GuardrailFunctionOutput(output_info=dict(res), tripwire_triggered=tripwire)
+            problem = verdict_problem(res)
+            tripwire = True if problem else res.blocked
+        info = _no_verdict_info(problem) if problem else dict(res)
+        return GuardrailFunctionOutput(output_info=info, tripwire_triggered=tripwire)
 
     return verity_output_guardrail
 
@@ -79,8 +102,10 @@ def build_input_guardrail(client: Any, *, tier: str = "quick") -> Any:
         import inspect
         if inspect.isawaitable(res):
             res = await res
-        tripwire = res.decision in ("injection", "suspicious")
-        return GuardrailFunctionOutput(output_info=dict(res), tripwire_triggered=tripwire)
+        problem = verdict_problem(res)
+        tripwire = True if problem else res.decision in ("injection", "suspicious")
+        info = _no_verdict_info(problem) if problem else dict(res)
+        return GuardrailFunctionOutput(output_info=info, tripwire_triggered=tripwire)
 
     return verity_input_guardrail
 
@@ -109,6 +134,12 @@ def build_tool_input_guardrail(client: Any, *, tier: str = "quick",
         args = getattr(getattr(call, "tool_call", None), "arguments", "")
         res = await _guard_any(client, f"Execute tool `{name}` with arguments {str(args)[:800]}",
                                context=None, policy=policy, tier=tier)
+        problem = verdict_problem(res)
+        if problem:  # no verdict is NOT permission to run the tool
+            return ToolGuardrailFunctionOutput.reject_content(
+                message=(f"NOT EXECUTED — VerityLayer could not verify this call ({problem}). "
+                         f"Fail-closed: resolve the guard or get human approval."),
+                output_info=_no_verdict_info(problem))
         stop = res.blocked or (review_blocks and res.decision == "review")
         if stop:
             msg = f"BLOCKED by VerityLayer (risk={res.risk}). {res.safer_alternative or ''}".strip()
