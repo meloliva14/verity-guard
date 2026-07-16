@@ -61,11 +61,26 @@ Even a plugin is not a total chokepoint, and it matters that we're precise:
 
 We'd rather ship the smaller true claim. That is the whole product.
 
-## Status
+## Status: the plugin exists — use it if you need a gate
 
-The plugin is not built yet. This skill is the advisory layer, shipped honestly as such.
-If you want the enforcing layer, say so — it's a well-defined, sanctioned integration
-(maintainers closed the competing generic-interceptor PR in favor of extending plugin
-hooks, so this tier is the supported direction), and it is the thing worth building next.
+**`@veritylayer/openclaw-plugin`** implements tier 1 above: a `before_tool_call` hook that
+verifies every agent-initiated `exec` / `write` / `edit` / `apply_patch` / `process` /
+`code_execution` / `terminal` call and maps the verdict onto OpenClaw's own controls.
+
+```bash
+openclaw plugins install clawhub:@veritylayer/openclaw-plugin
+```
+
+It holds the same claim boundary this file documents, and takes the fail-closed question
+seriously rather than picking the convenient side: when **no verdict exists** (unreachable,
+unpaid, malformed), the default is `onUnavailable: "review"` — the action stops and OpenClaw
+asks the human, with the reason shown. `"block"` is available. **There is deliberately no
+`"allow"`.** (A hard block on every outage would make our bad afternoon your dead agent; a
+silent allow would make a safety product a liability. Neither is acceptable.)
+
+**This skill remains the advisory layer, and that is still a real job** — verifying a claim
+before you repeat it, screening text you were handed, redacting a payload. Those are decisions
+the agent *wants* help with. Use the skill for those. Use the plugin when the rule has to hold
+whether the model cooperates or not.
 
 → https://veritylayer.dev/guard
