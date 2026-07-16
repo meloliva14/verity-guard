@@ -97,14 +97,24 @@ class VerityResult(dict):
     def safer_alternative(self) -> Optional[str]:
         return self.get("safer_alternative")
 
+    @staticmethod
+    def _norm(decision: Any) -> str:
+        """Compare decisions case- and whitespace-insensitively.
+
+        Exact matching is a live hazard here: ``blocked`` is what every gate consults, so a
+        decision of ``"BLOCK"`` or ``" block"`` would compare unequal to ``"block"``, read
+        as not-blocked, and execute the very action the verdict meant to stop.
+        """
+        return decision.strip().lower() if isinstance(decision, str) else ""
+
     @property
     def allowed(self) -> bool:
         """True for a clearly-safe verdict (allow / publish / clean / supported)."""
-        return self.decision in ("allow", "publish", "clean", "supported")
+        return self._norm(self.decision) in ("allow", "publish", "clean", "supported")
 
     @property
     def blocked(self) -> bool:
-        return self.decision == "block"
+        return self._norm(self.decision) == "block"
 
     @property
     def flagged(self) -> bool:

@@ -11,11 +11,13 @@ Prints one JSON object to stdout. The exit code is the contract:
 
     0  a real verdict came back
     2  payment required (no key, or the wallet cannot cover the disclosed price)
-    3  the check did not happen (unreachable / timeout / bad response)
+    3  the check did not happen (unreachable / timeout / bad response / no decision)
+    4  `receipt` only: a verdict EXISTS and it is BAD — the receipt is invalid/forged
     1  usage error
 
-Anything non-zero means NO VERDICT EXISTS. Never treat it as "allow", and never report a
-verification that did not happen.
+Exit 0 means a decision genuinely exists. 2 and 3 mean NO VERDICT EXISTS — never treat
+either as "allow", and never report a verification that did not happen. 4 is different and
+important: the check DID happen and it says the receipt is forged.
 """
 from __future__ import annotations
 
@@ -103,7 +105,14 @@ def main() -> None:
         res = _client(paid=False).verify_receipt(json.loads(raw))
         json.dump(dict(res), sys.stdout, indent=2, default=str)
         sys.stdout.write("\n")
-        raise SystemExit(0 if res.get("valid") else 3)
+        if res.get("valid"):
+            raise SystemExit(0)
+        if res.get("error"):
+            raise SystemExit(3)  # the check itself failed — we learned nothing
+        # A definitive "this receipt is forged" is a VERDICT, and the most security-relevant
+        # one we produce. Exit 4, not 3: a caller told 3 means "didn't happen, retry later"
+        # would otherwise shrug off a detected forgery.
+        raise SystemExit(4)
 
     method, field, tiers, default_tier = COMMANDS[a.cmd]
     tier = a.tier or default_tier
@@ -118,14 +127,18 @@ def main() -> None:
 
     res = getattr(_client(paid=True), method)(a.text, **kwargs)
 
-    # Fail-closed reporting: a non-verdict must never be printed as if it were one.
-    if res.get("error"):
-        _die(3, str(res["error"]), endpoint=res.get("endpoint"),
+    # Fail-closed reporting, driven off the SDK's chokepoint rather than a hand-rolled list.
+    # Hand-rolling it here missed a whole class: a 200 that parses but carries no decision
+    # exited 0, asserting "a real verdict came back" when none had.
+    from verity_guard import verdict_problem
+    problem = verdict_problem(res)
+    if problem:
+        if res.payment_required:
+            _die(2, f"payment required ({res.price}) — the check was not performed",
+                 price=res.price, challenge=res.get("challenge"),
+                 hint=f"fund the address from `verity.py address` with USDC on Base, or set {ENV_KEY}")
+        _die(3, problem, endpoint=res.get("endpoint"),
              note="The check did NOT happen. Do not proceed as if this returned allow.")
-    if res.payment_required:
-        _die(2, f"payment required ({res.price}) — the check was not performed",
-             price=res.price,
-             hint=f"fund the address from `verity.py address` with USDC on Base, or set {ENV_KEY}")
 
     json.dump(dict(res), sys.stdout, indent=2, default=str)
     sys.stdout.write("\n")

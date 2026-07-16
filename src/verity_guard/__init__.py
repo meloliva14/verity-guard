@@ -35,7 +35,7 @@ from .decorators import (
 )
 from .payer import async_x402_payer, wallet_address, x402_payer
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "VerityClient",

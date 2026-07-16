@@ -36,8 +36,12 @@ export class VerityResult {
   get valid(): boolean | undefined { return this.raw.valid as boolean | undefined; }
   get reasons(): unknown[] { return (this.raw.reasons as unknown[]) ?? []; }
   get saferAlternative(): string | undefined { return this.raw.safer_alternative as string | undefined; }
-  get allowed(): boolean { return ["allow", "publish", "clean", "supported"].includes(this.decision ?? ""); }
-  get blocked(): boolean { return this.decision === "block"; }
+  /** Compare decisions case- and whitespace-insensitively. `blocked` is what every gate
+   *  consults, so `"BLOCK"` or `" block"` must never compare unequal to `"block"`, read as
+   *  not-blocked, and execute the very action the verdict meant to stop. */
+  private get norm(): string { const d = this.decision; return typeof d === "string" ? d.trim().toLowerCase() : ""; }
+  get allowed(): boolean { return ["allow", "publish", "clean", "supported"].includes(this.norm); }
+  get blocked(): boolean { return this.norm === "block"; }
   get flagged(): boolean { return !this.allowed; }
 }
 
@@ -165,18 +169,36 @@ const NOT_CHECKED = "No verdict exists — do not treat this as an allow.";
  * unverified action through. Fail-closed means: proceed only on an affirmative verdict.
  * No verdict, no action.
  */
+/** Every decision the services are contracted to return. An ALLOWLIST: gates must recognize
+ *  a verdict, not merely fail to recognize a block. */
+export const KNOWN_DECISIONS: ReadonlySet<string> = new Set([
+  "allow", "review", "block",
+  "supported", "unsupported", "uncertain",
+  "clean", "suspicious", "injection",
+  "publish", "contains_pii", "contains_secret",
+]);
+
 export function verdictProblem(res: VerityResult): string | undefined {
   if (res.paymentRequired) return `payment_required (${res.price}) — the check was never performed`;
   if (res.raw.error) return `guard unreachable: ${String(res.raw.error)}`;
   if (res.decision === undefined) return "guard returned no decision";
+  if (!KNOWN_DECISIONS.has(String(res.decision).trim().toLowerCase()))
+    return `guard returned an unrecognized decision ${JSON.stringify(res.decision)}`;
   return undefined;
 }
 
 /** Compact one-line summary an agent/LLM can read back. Never reads like an allow when no verdict exists. */
 export function formatVerdict(res: VerityResult): string {
-  if (res.paymentRequired)
-    return `[verity] NOT CHECKED — payment_required (${res.price}); settle via x402 and retry. ${NOT_CHECKED}`;
-  if (res.raw.error) return `[verity] NOT CHECKED — error: ${String(res.raw.error)}. ${NOT_CHECKED}`;
+  // Driven off the same chokepoint the gate uses, so the string can never disagree with it.
+  // Hand-listing the cases let a decision-less 200 render as "[verity] decision=undefined |
+  // risk=0.1" with no warning — on the advisory tool paths that string is the ONLY signal
+  // the model gets.
+  const problem = verdictProblem(res);
+  if (problem) {
+    if (res.paymentRequired)
+      return `[verity] NOT CHECKED — payment_required (${res.price}); settle via x402 and retry. ${NOT_CHECKED}`;
+    return `[verity] NOT CHECKED — ${problem}. ${NOT_CHECKED}`;
+  }
   const parts = [`[verity] decision=${res.decision}`, `risk=${res.risk}`];
   if (res.reasons.length) parts.push("reasons: " + res.reasons.slice(0, 4).map(String).join("; "));
   if (res.blocked && res.saferAlternative) parts.push("safer_alternative: " + res.saferAlternative);

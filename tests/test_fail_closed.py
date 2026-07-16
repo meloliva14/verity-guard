@@ -101,10 +101,40 @@ def test_verdict_problem_accepts_real_verdicts():
     (UNPAID, "payment_required"),
     (NO_DECISION, "no decision"),
     ({"decision": "allow"}, "not a VerityResult"),
+    (VerityResult({"decision": "banana"}), "unrecognized decision"),
+    (VerityResult({"decision": "deny"}), "unrecognized decision"),
+    (VerityResult({"decision": True}), "unrecognized decision"),
 ])
 def test_verdict_problem_rejects_non_verdicts(bad, frag):
     problem = verdict_problem(bad)
     assert problem is not None and frag in problem
+
+
+# ── the gates are an ALLOWLIST, not "anything that isn't exactly 'block'" ──────────────
+@pytest.mark.parametrize("variant", ["BLOCK", " block", "Block", "block "])
+def test_case_variants_of_block_still_block(variant):
+    """The sharpest form of the denylist bug: a case-variant of the BLOCK verdict itself
+    compared unequal to "block", read as not-blocked, and executed the $4,000 wire."""
+    tool = _Tool()
+    node = GuardedToolNode([tool], _SyncClient(VerityResult({"decision": variant, "risk": 0.99})))
+    node.invoke(_state())
+    assert tool.ran is False, f"FAIL-OPEN: decision={variant!r} executed the tool"
+
+
+@pytest.mark.parametrize("garbled", ["banana", "deny", "allow_maybe"])
+def test_unrecognized_decisions_do_not_execute(garbled):
+    tool = _Tool()
+    node = GuardedToolNode([tool], _SyncClient(VerityResult({"decision": garbled})))
+    out = node.invoke(_state())["messages"]
+    assert tool.ran is False, f"FAIL-OPEN: unrecognized decision {garbled!r} executed the tool"
+    assert "NOT EXECUTED" in out[0].content
+
+
+def test_case_variant_of_allow_still_allows():
+    """The allowlist must normalize both ways — don't over-block a real allow."""
+    tool = _Tool()
+    GuardedToolNode([tool], _SyncClient(VerityResult({"decision": "ALLOW"}))).invoke(_state())
+    assert tool.ran is True
 
 
 def test_verdict_problem_detects_unawaited_coroutine():

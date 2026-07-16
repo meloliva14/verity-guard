@@ -52,9 +52,11 @@ leaves a signed artifact you can show someone later.
 - pasting logs, configs, or files into a message, a public place, or a third-party API
 
 **Before asserting a fact you are not certain of** — use `verify`:
-- `--tier quick` ($0.02) as a cheap pre-filter → default ($0.25, live web citations) → `--tier pro` ($0.35)
+- `--tier quick` ($0.02, ungrounded pre-filter — **this is the default if you omit `--tier`**)
+- `--tier grounded` ($0.25, live web citations) — use this when the claim actually matters
+- `--tier pro` ($0.35, premium synthesis)
 
-Fifteen more focused checks (sources, freshness, math, summary faithfulness, policy
+Twelve more focused checks (sources, freshness, math, summary faithfulness, policy
 compliance) are listed in `references/catalog.md`. Read it only if the four above do not fit.
 
 ## Quick start
@@ -118,8 +120,13 @@ and never passed on a command line (which would leak it into process lists, shel
 and approval prompts). It signs an EIP-3009 authorization locally for the exact amount
 disclosed in each challenge — VerityLayer only ever receives the signature.
 
-Without a key, paid checks return `payment_required` with the live price and exit
-non-zero. Nothing is fabricated, and `receipt` still works.
+Without a key, paid checks exit non-zero (2) with a `payment_required` error explaining
+what to set — no network call is made, so no live price is quoted. Nothing is fabricated,
+and `receipt` still works.
+
+Prices shown in output are the SDK's disclosed constants for each tier. The authoritative
+price is always the live x402 challenge, which is forwarded in the `challenge` field when a
+payment is required.
 
 ## Safety
 

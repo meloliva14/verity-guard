@@ -32,8 +32,11 @@ means a **plugin**, not a skill:
    mismatch:
    - allow → return nothing (pass through)
    - block → `{block: true, blockReason: "…"}` (the reason surfaces to the user)
-   - review → `{requireApproval: {title, description, severity, decisions, timeoutMs}}`,
-     which lands in OpenClaw's normal human-approval surfaces
+   - review → `{requireApproval: {title, description, severity, allowedDecisions, timeoutMs}}`,
+     which lands in OpenClaw's normal human-approval surfaces. (The field is
+     `allowedDecisions?: Array<"allow-once"|"allow-always"|"deny">` — verified against
+     their `docs/plugins/hooks.md` BeforeToolCallResult; a field named `decisions` is
+     silently ignored.)
    - ⚠️ never return `{block: false}` to mean allow — that is treated as *no decision*.
 2. **`api.registerTrustedToolPolicy()`** — the stronger tier: manifest-gated policies
    (declared in `contracts.trustedToolPolicies`) that run ahead of ordinary hooks and can

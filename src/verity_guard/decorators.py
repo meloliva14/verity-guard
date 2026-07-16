@@ -49,6 +49,23 @@ class GuardUnavailable(Exception):
         )
 
 
+# Every decision value the services are contracted to return, across all endpoints.
+# Gates must recognize a verdict, not merely fail to recognize a block.
+KNOWN_DECISIONS = frozenset({
+    "allow", "review", "block",                       # guard_action / sieve
+    "supported", "unsupported", "uncertain",          # verify / cite
+    "clean", "suspicious", "injection",               # sentinel
+    "publish",                                        # sieve
+    "contains_pii", "contains_secret",                # redact
+})
+
+
+def _normalized(decision: Any) -> str:
+    """Compare decisions case- and whitespace-insensitively. 'BLOCK' must never slip past a
+    check for 'block' and execute the action it was meant to stop."""
+    return str(decision).strip().lower()
+
+
 def _close_awaitable(res: Any) -> None:
     """Best-effort close of an un-awaited coroutine so it doesn't emit a RuntimeWarning
     on GC. Cosmetic only — the fail-closed decision has already been made by then."""
@@ -85,6 +102,12 @@ def verdict_problem(res: Any) -> Optional[str]:
         return f"guard unreachable: {res.get('error')}"
     if res.decision is None:
         return "guard returned no decision"
+    if _normalized(res.decision) not in KNOWN_DECISIONS:
+        # An ALLOWLIST, not a denylist. The gates ask "did it block?", so anything that is
+        # not exactly "block" would otherwise proceed — including a garbled decision, and
+        # (worst) a case variant of the block verdict itself: "BLOCK" != "block", so a real
+        # block would have executed the action.
+        return f"guard returned an unrecognized decision {res.decision!r}"
     return None
 
 
@@ -99,15 +122,18 @@ def format_verdict(res: Any) -> str:
     an async client and got an un-awaited coroutine — and (b) never read like an allow when
     no verdict was produced.
     """
-    if inspect.isawaitable(res) or not isinstance(res, VerityResult):
-        problem = verdict_problem(res)
+    # Drive off the SAME chokepoint the gates use, so the string can never disagree with
+    # them. Hand-listing the cases here is what let a decision-less 200 render as the
+    # cheerful "[verity] decision=None | risk=0.1" — with no warning — on the advisory
+    # tool paths (LangChain/CrewAI/OpenAI-Agents build_guard_tool), where this string IS
+    # the entire enforcement signal the model ever sees.
+    problem = verdict_problem(res)
+    if problem:
         _close_awaitable(res)
+        if isinstance(res, VerityResult) and res.payment_required:
+            return (f"[verity] NOT CHECKED — payment_required ({res.price}); settle via "
+                    f"x402 and retry. {_NOT_CHECKED}")
         return f"[verity] NOT CHECKED — {problem}. {_NOT_CHECKED}"
-    if res.payment_required:
-        return (f"[verity] NOT CHECKED — payment_required ({res.price}); settle via x402 "
-                f"and retry. {_NOT_CHECKED}")
-    if res.get("error"):
-        return f"[verity] NOT CHECKED — error: {res.get('error')}. {_NOT_CHECKED}"
     parts = [f"[verity] decision={res.decision}", f"risk={res.risk}"]
     if res.reasons:
         parts.append("reasons: " + "; ".join(str(r) for r in res.reasons[:4]))

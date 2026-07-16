@@ -29,11 +29,23 @@ def test_real_verdicts_render_normally():
     assert "decision=block" in out and "safer_alternative" in out
 
 
-@pytest.mark.parametrize("bad", [UNREACHABLE, UNPAID])
+NO_DECISION = VerityResult({"risk": 0.1})
+GARBLED = VerityResult({"decision": "banana"})
+
+
+@pytest.mark.parametrize("bad", [UNREACHABLE, UNPAID, NO_DECISION, GARBLED])
 def test_non_verdicts_say_NOT_CHECKED_and_warn_against_allow(bad):
     out = format_verdict(bad)
     assert "NOT CHECKED" in out
     assert "do not treat this as an allow" in out.lower()
+
+
+def test_decisionless_200_is_not_rendered_as_a_cheerful_verdict():
+    """It used to render '[verity] decision=None | risk=0.1' with no warning — and on the
+    advisory tool paths this string is the ONLY signal the model gets."""
+    out = format_verdict(VerityResult({"risk": 0.1}))
+    assert "decision=None" not in out
+    assert "NOT CHECKED" in out
 
 
 def test_unawaited_coroutine_does_not_raise_and_does_not_read_as_allow():
