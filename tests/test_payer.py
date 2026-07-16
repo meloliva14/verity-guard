@@ -77,3 +77,56 @@ def test_client_accepts_the_payer_session():
     v = VerityClient(http=payer.x402_payer(DUMMY))
     assert v._http is not None
     assert v._owns is False  # caller-supplied client: we must not close it
+
+
+# ── spend guards ──────────────────────────────────────────────────────────────────────
+# An x402 client with no policies pays WHATEVER the challenge names, capped only by the
+# wallet balance. Proven live against a fake engine: the unpoliced payer signed an EIP-3009
+# for $750.00 on a call whose disclosed price was $0.02. Endpoints are env-overridable, so
+# that is reachable. These lock the two guards that make it refuse instead.
+
+def _reqs(amount: str, network: str = payer.BASE_MAINNET):
+    from x402.schemas import PaymentRequirements
+    return [PaymentRequirements(scheme="exact", network=network,
+                                asset="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                                amount=amount, pay_to="0x" + "de" * 20, max_timeout_seconds=300)]
+
+
+def _survives(policies, reqs):
+    """Apply every policy in turn, as the client does. Empty => no payment is possible."""
+    for p in policies:
+        reqs = p(2, reqs)
+    return reqs
+
+
+def test_atomic_usdc_conversion():
+    assert payer._atomic_usdc("1.00") == 1_000_000
+    assert payer._atomic_usdc("0.02") == 20_000
+    assert payer._atomic_usdc(0.35) == 350_000
+
+
+def test_default_cap_refuses_an_absurd_price_but_allows_a_real_one():
+    pol = payer._spend_policies(payer.BASE_MAINNET, payer.DEFAULT_MAX_PRICE_USDC)
+    assert _survives(pol, _reqs("750000000")) == [], "CRITICAL: a $750 challenge survived the cap"
+    assert len(_survives(pol, _reqs("20000"))) == 1, "over-blocked a legitimate $0.02 call"
+
+
+def test_explicit_cap_is_honored_at_the_boundary():
+    pol = payer._spend_policies(payer.BASE_MAINNET, "0.35")
+    assert len(_survives(pol, _reqs("350000"))) == 1   # exactly at the cap: allowed
+    assert _survives(pol, _reqs("350001")) == []       # one unit over: refused
+
+
+def test_network_pin_rejects_other_chains_including_v1_aliases():
+    """register_exact_evm_client pins only the v2 registry, then registers the same key on
+    all 19 legacy v1 networks. The pin policy is what stops a polygon challenge."""
+    pol = payer._spend_policies(payer.BASE_MAINNET, "1.00")
+    for bad in ("polygon", "avalanche", "eip155:137", "base-sepolia"):
+        assert _survives(pol, _reqs("20000", bad)) == [], f"{bad} survived the network pin"
+    assert len(_survives(pol, _reqs("20000", "base"))) == 1      # v1 alias of the SAME chain
+    assert len(_survives(pol, _reqs("20000", payer.BASE_MAINNET))) == 1
+
+
+def test_chain_id_parsing():
+    assert payer._chain_id("eip155:8453") == 8453
+    assert payer._chain_id("nonsense") is None
