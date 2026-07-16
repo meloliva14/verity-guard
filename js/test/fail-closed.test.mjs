@@ -72,3 +72,50 @@ test("formatVerdict renders a real verdict normally", () => {
   assert.match(s, /decision=block/);
   assert.match(s, /safer_alternative/);
 });
+
+/**
+ * verdictProblem is the chokepoint every gate consults, so it has to ANSWER, not throw.
+ *
+ * It read `res.raw.error` on the assumption it was handed a VerityResult. Anything else — a
+ * plain `{error}` object, an un-awaited promise, undefined — crashed it, which means the code
+ * whose entire job is to report "there is no verdict" was itself throwing instead of saying so.
+ * Python's verdict_problem has always had these guards; JS didn't. Found by the OpenClaw
+ * plugin's own tests: its error path handed verdictProblem a bare {error} and it threw.
+ */
+test("verdictProblem answers instead of throwing on a non-VerityResult", () => {
+  assert.match(verdictProblem({ error: "timeout" }), /not a VerityResult/);
+  assert.match(verdictProblem(undefined), /not a VerityResult/);
+  assert.match(verdictProblem(null), /not a VerityResult/);
+  assert.match(verdictProblem("allow"), /not a VerityResult/);
+  assert.match(verdictProblem(42), /not a VerityResult/);
+});
+
+test("verdictProblem names the un-awaited promise instead of crashing on it", () => {
+  // The JS shape of the un-awaited-coroutine bug: `client.guard(...)` without await is a
+  // Promise, which is truthy and has no decision. Silently "not blocked" is the fail-open.
+  const problem = verdictProblem(Promise.resolve(mk({ decision: "block" })));
+  assert.match(problem, /un-awaited promise/);
+  assert.match(problem, /nothing was verified/);
+});
+
+test("guardToolCall never allows — and never crashes — when handed a non-verdict", async () => {
+  // A client that answers with something that isn't a VerityResult. `blocked: res.blocked` was
+  // read unconditionally here and threw, so the gate died on exactly the inputs it exists to
+  // survive. A TypeError out of the gate is not a verdict.
+  for (const bad of [{ error: "x" }, undefined, null, "allow"]) {
+    const r = await guardToolCall({ guard: async () => bad }, { toolName: "wire_money", args: {} });
+    assert.equal(r.allowed, false, `${JSON.stringify(bad)} must never be allowed`);
+    assert.equal(r.blocked, false, "no verdict means nothing was blocked either — both are false");
+    assert.ok(r.problem, "the caller must be told WHY there is no verdict");
+    assert.match(r.summary, /NOT CHECKED/);
+  }
+});
+
+test("a promise handed BACK from guard() is awaited, so it is a real verdict", async () => {
+  // Not the un-awaited bug: guardToolCall awaits client.guard(), so this resolves normally.
+  // Recording it so nobody 'fixes' it into reporting a phantom problem.
+  const r = await guardToolCall({ guard: () => Promise.resolve(mk({ decision: "block" })) }, { toolName: "wire_money", args: {} });
+  assert.equal(r.problem, undefined);
+  assert.equal(r.blocked, true);
+  assert.equal(r.allowed, false);
+});

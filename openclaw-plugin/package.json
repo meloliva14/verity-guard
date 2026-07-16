@@ -1,0 +1,62 @@
+{
+  "name": "@veritylayer/openclaw-plugin",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin: independently verify irreversible tool calls (allow / review / block) before they run. Fail-closed, signed verdicts, pay-per-call via x402.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": ">=2026.3.24-beta.2",
+      "minGatewayVersion": "2026.3.24-beta.2"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node --test \"test/*.test.mjs\""
+  },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "ai-safety",
+    "guardrail",
+    "verification",
+    "fail-closed",
+    "before-tool-call",
+    "agent-security",
+    "prompt-injection",
+    "x402",
+    "veritylayer"
+  ],
+  "author": "VerityLayer",
+  "license": "MIT",
+  "homepage": "https://veritylayer.dev/guard",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meloliva14/verity-guard"
+  },
+  "dependencies": {
+    "@veritylayer/guard": "^0.3.0",
+    "@x402/evm": "^2.18.0",
+    "@x402/fetch": "^2.18.0",
+    "viem": "^2.55.2"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.3.24-beta.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "openclaw": "^2026.7.1",
+    "typescript": "^5.5.0"
+  }
+}

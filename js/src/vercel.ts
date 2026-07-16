@@ -113,9 +113,15 @@ export async function guardToolCall(client: VerityClient, input: GuardToolCallIn
     tier: input.tier ?? "quick",
   });
   const problem = verdictProblem(res);
+  // `!problem &&` guards the property read, not just the logic: verdictProblem answers for
+  // non-VerityResults (a plain {error}, an un-awaited promise, undefined) rather than throwing,
+  // so `res` here may have no `.blocked` at all. `blocked: res.blocked` was evaluated
+  // unconditionally and crashed the gate on exactly the inputs the gate exists to survive.
+  // When there's a problem there is no verdict, so nothing was blocked AND nothing is allowed.
+  const blocked = !problem && res.blocked;
   return {
-    allowed: !problem && !res.blocked,
-    blocked: res.blocked,
+    allowed: !problem && !blocked,
+    blocked,
     problem,
     result: res,
     summary: formatVerdict(res),

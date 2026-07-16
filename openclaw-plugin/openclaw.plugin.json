@@ -1,0 +1,39 @@
+{
+  "id": "verity-gate",
+  "name": "VerityLayer Gate",
+  "description": "Independently verifies irreversible tool calls (allow / review / block) before they run. Fail-closed: an unverified action never passes as verified.",
+  "activation": { "onStartup": true },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "gatedTools": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Tool names to verify. Defaults to exec, write, edit, apply_patch, process, code_execution, terminal. Note: the host aliases 'bash' to 'exec', so gate 'exec'."
+      },
+      "policy": {
+        "type": "string",
+        "description": "Your standing rule, e.g. 'No new payees without human review.'"
+      },
+      "tier": {
+        "type": "string",
+        "enum": ["quick", "standard", "pro"],
+        "description": "quick $0.02 (default), standard $0.08, pro $0.20."
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "Per-check budget in ms. Default 8000."
+      },
+      "onUnavailable": {
+        "type": "string",
+        "enum": ["review", "block"],
+        "description": "What to do when NO verdict exists (unreachable, unpaid, malformed). 'review' asks the human (default); 'block' refuses. There is deliberately no 'allow'."
+      },
+      "maxPriceUsdc": {
+        "type": "string",
+        "description": "Hard per-call spend ceiling in USDC. Default 1.00."
+      }
+    }
+  }
+}

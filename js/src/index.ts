@@ -2,9 +2,15 @@
  * @veritylayer/guard — a fail-closed verify-before-you-act gate for AI agents.
  *
  * Keyless & non-custodial: this client holds NO wallet and never pays silently.
- * VerityLayer's paid routes answer HTTP 402 until settled — pass an x402-wrapped
- * `fetch` (e.g. from `x402-fetch`) and it settles the disclosed USDC micro-payment
- * on Base and retries. Pass nothing and a 402 is surfaced as `payment_required`.
+ * VerityLayer's paid routes answer HTTP 402 until settled — pass an x402-wrapped `fetch`
+ * (`x402Payer` from `@veritylayer/guard/payer`, which caps the spend and pins the chain)
+ * and it settles the disclosed USDC micro-payment on Base and retries. Pass nothing and a
+ * 402 is surfaced as `payment_required` — with NO decision, which is not an allow.
+ *
+ * If you wrap your own: VerityLayer speaks x402 **v2** (challenge in the
+ * `payment-required` header). The unscoped `x402-fetch` package is the **v1** client and
+ * reads the challenge from the response body, so it cannot pay us — use the scoped
+ * `@x402/*` 2.x line.
  *
  * Every paid verdict carries an Ed25519-signed, independently re-verifiable receipt;
  * `verifyReceipt()` checks one for free against VerityLayer's published public key.
@@ -179,8 +185,18 @@ export const KNOWN_DECISIONS: ReadonlySet<string> = new Set([
 ]);
 
 export function verdictProblem(res: VerityResult): string | undefined {
+  // This function IS the chokepoint every gate consults, so it must answer rather than throw.
+  // It used to assume a VerityResult and read `res.raw.error`; anything else (a plain object,
+  // an un-awaited promise, undefined) crashed it — turning "there is no verdict" into an
+  // exception thrown from the very code whose job is to report that there is no verdict.
+  // Mirrors the Python `verdict_problem`, which has always had these two guards.
+  if (typeof (res as unknown as PromiseLike<unknown> | undefined)?.then === "function")
+    return "guard returned an un-awaited promise — you likely forgot to await the check, so nothing was verified";
+  if (!(res instanceof VerityResult))
+    return `guard returned ${res === null ? "null" : typeof res}, not a VerityResult — nothing was verified`;
+
   if (res.paymentRequired) return `payment_required (${res.price}) — the check was never performed`;
-  if (res.raw.error) return `guard unreachable: ${String(res.raw.error)}`;
+  if (res.raw?.error) return `guard unreachable: ${String(res.raw.error)}`;
   if (res.decision === undefined) return "guard returned no decision";
   if (!KNOWN_DECISIONS.has(String(res.decision).trim().toLowerCase()))
     return `guard returned an unrecognized decision ${JSON.stringify(res.decision)}`;
@@ -195,7 +211,10 @@ export function formatVerdict(res: VerityResult): string {
   // the model gets.
   const problem = verdictProblem(res);
   if (problem) {
-    if (res.paymentRequired)
+    // `res instanceof` first: verdictProblem now answers for non-VerityResults instead of
+    // throwing, so this branch can be reached with a plain object / promise / undefined, and
+    // reading `.paymentRequired` off one of those would crash the very reporter of "no verdict".
+    if (res instanceof VerityResult && res.paymentRequired)
       return `[verity] NOT CHECKED — payment_required (${res.price}); settle via x402 and retry. ${NOT_CHECKED}`;
     return `[verity] NOT CHECKED — ${problem}. ${NOT_CHECKED}`;
   }
