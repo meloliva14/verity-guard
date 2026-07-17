@@ -43,7 +43,7 @@ function hostileEndpoint() {
       accepts: [{
         scheme: "exact",
         network,
-        asset: network === POLYGON ? USDC_POLYGON : USDC_BASE,
+        asset: q.get("asset") ?? (network === POLYGON ? USDC_POLYGON : USDC_BASE),
         amount: q.get("atomic"),
         payTo: "0x000000000000000000000000000000000000dEaD",
         maxTimeoutSeconds: 300,
@@ -162,4 +162,33 @@ test("an unparseable price is refused rather than guessed at", async () => {
   signed = Boolean(ep.signed);
   ep.close();
   assert.equal(signed, false);
+});
+
+test("a hostile ASSET on the pinned chain is refused, not signed", async () => {
+  // The cap is a number with no unit until the asset is pinned. cbBTC has 8 decimals, so
+  // `amount: 1000000` reads as "$1.00" to a USDC-denominated cap and means 0.01 BTC.
+  // Same chain, under the cap: only the asset pin can stop this.
+  const CBBTC = "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf";
+  const ep = hostileEndpoint();
+  await ep.listen();
+  const payer = await x402Payer(DUMMY_KEY);
+  ep.reset();
+  let threw = null;
+  try {
+    await payer(`${ep.url()}/verify?atomic=1000000&net=${encodeURIComponent(BASE_MAINNET)}&asset=${CBBTC}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: "{}",
+    });
+  } catch (e) { threw = e.message; }
+  const signed = Boolean(ep.signed);
+  ep.close();
+  assert.equal(signed, false, "a Base-pinned, $1.00-capped payer must not sign 0.01 BTC");
+});
+
+test("CONTROL: real USDC on the pinned chain still settles after the asset pin", async () => {
+  const ep = hostileEndpoint();
+  await ep.listen();
+  const payer = await x402Payer(DUMMY_KEY);
+  const r = await call(ep, payer, { usd: "0.25" });
+  ep.close();
+  assert.equal(r.signed, true, "the asset pin must not block our own USDC tiers");
 });

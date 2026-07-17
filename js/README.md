@@ -68,6 +68,8 @@ anchor (`VERITY_ENGINE_URL` is env-overridable, and DNS/TLS interception is real
 - **Spend cap** — default **$1.00** per call (~3× our priciest tier). A 402 naming more is
   refused *before* any signature. Set your own: `x402Payer(key, { maxPriceUsdc: "0.35" })`.
 - **Chain pin** — Base (`eip155:8453`) only. Another chain is refused, not signed.
+- **Asset pin** — USDC only. Without it the cap has no unit: a token with 8 decimals slips a
+  far larger transfer under the same integer (`1000000` = $1.00 in USDC, 0.01 BTC in cbBTC).
 
 > ### ⚠️ Use `@x402/fetch`, not `x402-fetch`
 >

@@ -32,6 +32,9 @@
 /** v2 network identifiers are CAIP-2. Base mainnet. */
 export const BASE_MAINNET = "eip155:8453";
 
+/** Native USDC on Base — the only asset VerityLayer ever prices in, and the only one we sign for. */
+export const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
 /** ~3x our priciest tier ($0.35): room for every real call, a hard stop far below a drain. */
 export const DEFAULT_MAX_PRICE_USDC = "1.00";
 
@@ -62,6 +65,8 @@ function requiredAmount(r: any): bigint | null {
 export interface PayerOptions {
   /** The chain this wallet may pay on. Anything else is refused, not signed. */
   network?: string;
+  /** The assets this wallet may pay in. Defaults to USDC on Base — the only thing we price in. */
+  assets?: string[];
   /** Hard per-call ceiling in USDC. A 402 naming more is refused before any signature. */
   maxPriceUsdc?: string | number;
   /** The fetch to wrap. Defaults to the global. */
@@ -91,6 +96,23 @@ function networkPinPolicy(network: string) {
 }
 
 /**
+ * Refuse every asset but `assets`.
+ *
+ * Without this, the cap is a number with no unit. `maxAmountPolicy` compares raw minor units
+ * against a ceiling computed in USDC's 6 decimals — so a 402 on the PINNED chain naming a
+ * different EIP-3009 token slips a much larger transfer under the same integer: cbBTC has 8
+ * decimals, so `amount: 1000000` reads as "$1.00" to the cap and means 0.01 BTC. The wallet
+ * must actually hold that token for it to land (a USDC-only wallet is unaffected), but the
+ * README states the guarantee unconditionally — "a hostile 402 can't name its own price" — and
+ * a cap that can be denominated by the counterparty is not a cap. Pin the unit.
+ */
+function assetPinPolicy(assets: string[]) {
+  const allowed = new Set(assets.map((a) => a.toLowerCase()));
+  return (_version: number, requirements: any[]) =>
+    (requirements ?? []).filter((r) => typeof r?.asset === "string" && allowed.has(r.asset.toLowerCase()));
+}
+
+/**
  * A `fetch` that settles VerityLayer's 402s from `privateKey`, capped and chain-pinned.
  *
  * ```ts
@@ -106,7 +128,7 @@ function networkPinPolicy(network: string) {
  */
 export async function x402Payer(
   privateKey: string,
-  { network = BASE_MAINNET, maxPriceUsdc = DEFAULT_MAX_PRICE_USDC, fetch: baseFetch }: PayerOptions = {},
+  { network = BASE_MAINNET, assets = [USDC_BASE], maxPriceUsdc = DEFAULT_MAX_PRICE_USDC, fetch: baseFetch }: PayerOptions = {},
 ): Promise<typeof fetch> {
   const cap = atomicUsdc(maxPriceUsdc);
   const { wrapFetchWithPayment, x402Client, ExactEvmScheme, toClientEvmSigner, privateKeyToAccount } =
@@ -119,6 +141,9 @@ export async function x402Payer(
     // ends up signing someone else's chain.
     .register(network, new ExactEvmScheme(toClientEvmSigner(account)))
     .registerPolicy(networkPinPolicy(network))
+    // Asset BEFORE amount: the cap is denominated in USDC's 6 decimals, so it only means
+    // anything once the asset is pinned.
+    .registerPolicy(assetPinPolicy(assets))
     .registerPolicy(maxAmountPolicy(cap));
 
   return wrapFetchWithPayment(baseFetch ?? fetch, client) as typeof fetch;
