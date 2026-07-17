@@ -28,13 +28,15 @@ the environment instead. Fund the address ``wallet_address(key)`` with USDC on B
 """
 from __future__ import annotations
 
-from decimal import Decimal
+import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 BASE_MAINNET = "eip155:8453"
 # Native USDC on Base — the only asset VerityLayer prices in, and the only one we sign for.
 USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 USDC_DECIMALS = 6
+_USDC_AMOUNT = re.compile(r"^\d+(\.\d+)?$")
 
 # Hard ceiling on what a single call may pay, in USDC. Every VerityLayer tier is <= $0.35,
 # so this is ~3x headroom and still refuses anything absurd.
@@ -62,8 +64,27 @@ def _install_hint(err: BaseException) -> str:
 
 
 def _atomic_usdc(price: str | float | Decimal) -> int:
-    """Dollars -> USDC minor units (6dp), rounded down."""
-    return int((Decimal(str(price)) * (10 ** USDC_DECIMALS)).to_integral_value(rounding="ROUND_FLOOR"))
+    """Dollars -> USDC minor units (6dp), rounded down. Accepts ``"$0.25"`` or ``0.25``.
+
+    The ``$`` strip is not cosmetic. Every price this project publishes is a *display string*
+    — ``PRICE_QUICK = "$0.02"`` in the MCP server, ``"$0.25"`` in the client's ROUTES — so the
+    natural call is ``max_price_usdc=price``, and without this that raises
+    ``decimal.InvalidOperation`` from inside the money path. The JS ``atomicUsdc`` has always
+    stripped it; this is parity, and a guarantee that holds in one language only is an
+    accident (see the payer's own module docstring).
+    """
+    # One leading '$', then digits — matching the JS `atomicUsdc` regex exactly. `lstrip("$")`
+    # would strip ANY number of them and quietly accept "$$1" as 1.00; a money parser does not
+    # get to be generous about input it doesn't understand.
+    s = str(price).strip()
+    if s.startswith("$"):
+        s = s[1:]
+    if not _USDC_AMOUNT.match(s):
+        raise ValueError(f"not a USDC amount: {price!r}")
+    try:
+        return int((Decimal(s) * (10 ** USDC_DECIMALS)).to_integral_value(rounding="ROUND_FLOOR"))
+    except InvalidOperation as e:  # pragma: no cover - the regex already rejects these
+        raise ValueError(f"not a USDC amount: {price!r}") from e
 
 
 def _chain_id(network: str) -> int | None:

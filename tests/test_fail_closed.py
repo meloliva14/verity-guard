@@ -323,3 +323,36 @@ class TestCaseVariantGates:
             assert res.decision_norm == ""
             assert res.decision_is("review") is False
             assert res.decision_is("") is False, "an absent decision must not match an empty name"
+
+
+class TestAtomicUsdcParity:
+    """The money parser must accept what this project actually publishes.
+
+    Every price we emit is a DISPLAY string — PRICE_QUICK = "$0.02" in the MCP server,
+    "$0.25" in the client's ROUTES — so `max_price_usdc=price` is the natural call. Python
+    raised decimal.InvalidOperation on the "$" while JS's atomicUsdc had always stripped it:
+    a parity gap that would have crashed the money path of the very feature that needs it
+    (capping each MCP call at the price it disclosed).
+    """
+
+    @pytest.mark.parametrize("price,expected", [
+        ("0.02", 20_000), ("$0.02", 20_000), ("$0.25", 250_000),
+        ("$0.35", 350_000), ("$1.00", 1_000_000), (0.02, 20_000), (" $0.35 ", 350_000),
+    ])
+    def test_accepts_display_prices(self, price, expected):
+        from verity_guard.payer import _atomic_usdc
+        assert _atomic_usdc(price) == expected
+
+    @pytest.mark.parametrize("bad", ["abc", "", "$$1", "1.2.3", "-1", "$", "1,000"])
+    def test_rejects_nonsense_rather_than_guessing(self, bad):
+        """A money parser does not get to be generous about input it doesn't understand.
+
+        `lstrip("$")` quietly read "$$1" as 1.00 — my own check caught it.
+        """
+        from verity_guard.payer import _atomic_usdc
+        with pytest.raises(ValueError):
+            _atomic_usdc(bad)
+
+    def test_rounds_down_never_up(self):
+        from verity_guard.payer import _atomic_usdc
+        assert _atomic_usdc("0.0000019") == 1  # never round a payment UP
