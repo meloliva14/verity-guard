@@ -19,7 +19,18 @@
 export const ENGINE_DEFAULT = "https://api.veritylayer.dev";
 export const SUITE_DEFAULT = "https://suite.veritylayer.dev";
 
-export type Tier = "quick" | "grounded" | "pro" | "standard";
+/**
+ * Tiers are PER-METHOD. A single flat union let `verify(x, {tier:"standard"})` and
+ * `guard(x, {tier:"grounded"})` typecheck cleanly and then throw at runtime — synchronously,
+ * from `call()`, so a `.catch()` never even attaches. The type promised tiers no method
+ * accepts. Narrowing this after publish would be breaking, so it is narrowed now.
+ */
+/** `verify` — the grounding ladder. Note the default is `grounded` ($0.25), not `quick`. */
+export type VerifyTier = "quick" | "grounded" | "pro";
+/** `guard` / `detectInjection` / `moderate` / `redact` — the suite ladder. Default `quick` ($0.02). */
+export type CheckTier = "quick" | "standard" | "pro";
+/** The union of both. Prefer `VerifyTier` / `CheckTier`; this cannot tell them apart. */
+export type Tier = VerifyTier | CheckTier;
 type Host = "engine" | "suite";
 type Json = Record<string, unknown>;
 
@@ -79,7 +90,15 @@ export interface VerityOptions {
 export interface CheckOpts {
   context?: string;
   policy?: string;
-  tier?: Tier;
+  /** quick $0.02 (default) · standard $0.08 · pro $0.20. */
+  tier?: CheckTier;
+}
+
+export interface VerifyOpts {
+  context?: string;
+  policy?: string;
+  /** quick $0.02 (ungrounded) · grounded $0.25 (DEFAULT, live citations) · pro $0.35. */
+  tier?: VerifyTier;
 }
 
 export class VerityClient {
@@ -161,7 +180,7 @@ export class VerityClient {
   guard(action: string, o: CheckOpts = {}): Promise<VerityResult> {
     return this.call("guard", o.tier, { action, context: o.context, policy: o.policy });
   }
-  verify(claim: string, o: CheckOpts = {}): Promise<VerityResult> {
+  verify(claim: string, o: VerifyOpts = {}): Promise<VerityResult> {
     return this.call("verify", o.tier, { claim, context: o.context });
   }
   detectInjection(content: string, o: CheckOpts = {}): Promise<VerityResult> {
