@@ -108,6 +108,28 @@ class VerityResult(dict):
         return decision.strip().lower() if isinstance(decision, str) else ""
 
     @property
+    def decision_norm(self) -> str:
+        """The decision, case- and whitespace-normalized. ``""`` when there is no decision."""
+        return self._norm(self.decision)
+
+    def decision_is(self, *names: str) -> bool:
+        """True if the decision is any of ``names``, compared normalized.
+
+        Use this for EVERY decision comparison. Writing ``res.decision == "review"`` reopens
+        the exact hole ``_norm`` exists to close, and it did: ``verdict_problem()`` normalizes
+        before its allowlist check, so ``"INJECTION"`` is ADMITTED as a genuine verdict and
+        then sails past ``decision in ("injection", "suspicious")`` — the prompt-injection
+        tripwire does not trip, the injection reaches the agent, and the report says clean.
+        The doctrine was stated on ``_norm`` and then honored at exactly one call site.
+
+        An absent decision matches nothing — including ``decision_is("")``. Without that
+        guard, "there is no verdict" would compare equal to an empty name and read as a
+        match, which is the fail-open wearing a different hat.
+        """
+        norm = self.decision_norm
+        return norm != "" and norm in {self._norm(n) for n in names}
+
+    @property
     def allowed(self) -> bool:
         """True for a clearly-safe verdict (allow / publish / clean / supported)."""
         return self._norm(self.decision) in ("allow", "publish", "clean", "supported")

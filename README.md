@@ -7,7 +7,7 @@ Your agent is about to wire money, send an email, run `rm -rf`, or publish somet
 > Not "we signed a receipt that a call happened" (everyone does that now). **A re-verifiable *verdict*** — cryptographic proof that an action was independently judged safe, or that a claim was checked and supported. Fail-closed across four functions: guard actions, verify facts, detect prompt-injection, redact PII/secrets.
 
 - 🔒 **Fail-closed** — when unsure it escalates to `review` or `block`, never a confident wrong `allow`.
-- 🧾 **Ed25519-signed verdicts** — every paid result carries a receipt; `verify_receipt()` checks it for **free**, forever, offline.
+- 🧾 **Ed25519-signed verdicts** — every paid result carries a receipt that verifies **offline** against our published key at [`/.well-known/verity-pubkey.json`](https://api.veritylayer.dev/.well-known/verity-pubkey.json), forever, without us. `verify_receipt()` is the convenient **free** live check (it POSTs to the issuer — use the key directly if you want an independent one).
 - 🔑 **Keyless & non-custodial** — this SDK holds no wallet and never pays silently. Paid routes answer HTTP 402; your own [x402](https://x402.org) layer settles the disclosed USDC micro-payment on Base.
 - 🧩 **Native adapters** — LangChain, LangGraph, CrewAI, OpenAI Agents SDK. Base install pulls in *none* of them.
 
@@ -44,7 +44,8 @@ res = v.guard(
 )
 print(res.decision, res.risk)          # -> block 0.9
 print(res.safer_alternative)           # -> "Halt payment. Cross-verify via known channels…"
-print(v.verify_receipt(res.receipt).valid)   # -> True  (free, independent, offline-checkable)
+print(v.verify_receipt(res.receipt).valid)   # -> True  (free live check; the receipt itself
+                                            #          verifies offline against our published key)
 ```
 
 Your key never leaves your process. It signs an EIP-3009 authorization locally for the
@@ -152,8 +153,15 @@ agent = Agent(role="Treasurer", tools=[guard_tool])
 | Method | What it answers | Route (tier `quick`) | From |
 |---|---|---|---|
 | `guard(action, …)` | Should this action proceed? `allow / review / block` | suite `/check/quick` | $0.02 |
-| `verify(claim, …)` | Is this claim true? `supported / unsupported / uncertain` | engine `/verify` (grounded) | $0.02–$0.35 |
+| `verify(claim, …)` | Is this claim true? `supported / unsupported / uncertain` | engine `/verify` (grounded) | **$0.25 by default** ⚠️ |
 | `detect_injection(content, …)` | Is this untrusted text a prompt-injection? | suite `/sentinel/quick` | $0.02 |
+
+> ⚠️ **`verify()` is the one method that does not default to the $0.02 tier.** A bare
+> `v.verify(claim)` runs the **`grounded`** tier — live web citations, **$0.25**, 12.5× the
+> $0.02 anchored above. It's the right default for "is this claim true" (the cheap tier is
+> ungrounded and won't cite), but you should choose it, not discover it on a bill. Pass
+> `tier="quick"` for $0.02 or `tier="pro"` for $0.35. Every price is disclosed in the 402
+> before anything is signed, and `x402_payer`'s $1.00 cap bounds any single call regardless.
 | `moderate(content, …)` | Safe to publish? `publish / review / block` | suite `/sieve/quick` | $0.02 |
 | `redact(payload, …)` | Any PII/secrets? returns a redacted copy | suite `/redact/quick` | $0.02 |
 | `verify_receipt(receipt)` | Is this signed verdict authentic? | engine `/receipt/verify` | **free** |

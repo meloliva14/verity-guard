@@ -22,11 +22,22 @@ export interface VercelToolOpts {
   defaultPolicy?: string;
 }
 
-/** A shape compatible with the AI SDK `tool()` across v3–v5 (carries both schema keys). */
+/**
+ * A shape compatible with the AI SDK `tool()` across v3–v5 (carries both schema keys).
+ *
+ * The schema fields are `any`, not `unknown`, and that is deliberate. `unknown` is assignable
+ * to NOTHING, so the README's flagship snippet —
+ * `tools: { verityGuard: verityGuardTool(v) }` — failed to typecheck against the AI SDK's
+ * `Tool<...>` with `TS2322: Type 'unknown' is not assignable to type 'FlexibleSchema<never>'`,
+ * on ai@5 and ai@7, strict and non-strict. Runtime was always correct; the documented
+ * quickstart was simply a red `next build` for the median (TypeScript/Next) user.
+ * The SDK's `Tool` is generic over its schema and the type moves between majors, so this is
+ * the compat seam.
+ */
 export interface VerityVercelTool {
   description: string;
-  inputSchema: unknown;
-  parameters: unknown;
+  inputSchema: any;
+  parameters: any;
   execute: (args: Record<string, unknown>) => Promise<string>;
 }
 
@@ -103,7 +114,9 @@ export interface GuardToolCallResult {
  * never permission: `allowed` requires a real verdict that did not block.
  *
  * `review` still proceeds by default (only `block` stops), matching the documented behavior —
- * inspect `result.decision === "review"` if you want to escalate those to a human.
+ * inspect `result.result.decisionIs("review")` if you want to escalate those to a human.
+ * (Use `decisionIs`, never `decision === "review"`: a case variant compares unequal, silently
+ * skips your escalation, and reads as a clean pass.)
  */
 export async function guardToolCall(client: VerityClient, input: GuardToolCallInput): Promise<GuardToolCallResult> {
   let argStr: string;

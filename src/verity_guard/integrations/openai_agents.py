@@ -79,7 +79,7 @@ def build_output_guardrail(client: Any, *, mode: str = "guard", tier: str = "qui
             if inspect.isawaitable(res):
                 res = await res
             problem = verdict_problem(res)
-            tripwire = True if problem else res.decision == "unsupported"
+            tripwire = True if problem else res.decision_is("unsupported")
         else:
             res = await _guard_any(client, text, context="final agent output",
                                    policy=policy, tier=tier)
@@ -103,7 +103,7 @@ def build_input_guardrail(client: Any, *, tier: str = "quick") -> Any:
         if inspect.isawaitable(res):
             res = await res
         problem = verdict_problem(res)
-        tripwire = True if problem else res.decision in ("injection", "suspicious")
+        tripwire = True if problem else res.decision_is("injection", "suspicious")
         info = _no_verdict_info(problem) if problem else dict(res)
         return GuardrailFunctionOutput(output_info=info, tripwire_triggered=tripwire)
 
@@ -140,7 +140,7 @@ def build_tool_input_guardrail(client: Any, *, tier: str = "quick",
                 message=(f"NOT EXECUTED — VerityLayer could not verify this call ({problem}). "
                          f"Fail-closed: resolve the guard or get human approval."),
                 output_info=_no_verdict_info(problem))
-        stop = res.blocked or (review_blocks and res.decision == "review")
+        stop = res.blocked or (review_blocks and res.decision_is("review"))
         if stop:
             msg = f"BLOCKED by VerityLayer (risk={res.risk}). {res.safer_alternative or ''}".strip()
             return ToolGuardrailFunctionOutput.reject_content(message=msg, output_info=dict(res))

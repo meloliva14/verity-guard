@@ -44,11 +44,19 @@ USDC_DECIMALS = 6
 # was $0.02. A cap turns "drain the wallet" into "the payment is refused".
 DEFAULT_MAX_PRICE_USDC = "1.00"
 
-_INSTALL_HINT = (
-    "The x402 payer needs two extra packages. Install them with:\n"
-    "    pip install 'verity-guard[x402]'\n"
-    "(pulls in x402 + eth-account; neither is required for the free receipt checks)"
-)
+# Names the ACTUAL missing module. The old text said "install verity-guard[x402]" — which was
+# the command the user had just run (the extra shipped bare `x402`, so web3 was never pulled
+# in and every payer raised ImportError). An install hint that recommends the failing command
+# turns a one-line fix into an unwinnable loop, so it repeats what the exception really said.
+def _install_hint(err: BaseException) -> str:
+    return (
+        f"The x402 payer could not load its dependencies: {err}\n"
+        "    pip install 'verity-guard[x402]'\n"
+        "This extra pulls x402[evm] (which brings web3/eth-abi/eth-keys) + eth-account. None of\n"
+        "them are needed for the free receipt checks — only for signing payments.\n"
+        "If you installed verity-guard[x402] BEFORE 0.2.2, the extra was missing web3: upgrade\n"
+        "with  pip install -U 'verity-guard[x402]'"
+    )
 
 
 def _atomic_usdc(price: str | float | Decimal) -> int:
@@ -93,7 +101,7 @@ def _account(private_key: str) -> Any:
     try:
         from eth_account import Account
     except ImportError as e:  # pragma: no cover - depends on optional extra
-        raise ImportError(_INSTALL_HINT) from e
+        raise ImportError(_install_hint(e)) from e
     key = (private_key or "").strip()
     if not key:
         raise ValueError("empty private key — set VERITY_WALLET_KEY to a funded Base wallet")
@@ -124,7 +132,7 @@ def x402_payer(private_key: str, *, network: str = BASE_MAINNET,
         from x402.mechanisms.evm import EthAccountSigner
         from x402.mechanisms.evm.exact import register_exact_evm_client
     except ImportError as e:
-        raise ImportError(_INSTALL_HINT) from e
+        raise ImportError(_install_hint(e)) from e
 
     client = x402ClientSync()
     register_exact_evm_client(client, EthAccountSigner(_account(private_key)), networks=network,
@@ -146,7 +154,7 @@ def async_x402_payer(private_key: str, *, network: str = BASE_MAINNET,
         from x402.mechanisms.evm import EthAccountSigner
         from x402.mechanisms.evm.exact import register_exact_evm_client
     except ImportError as e:
-        raise ImportError(_INSTALL_HINT) from e
+        raise ImportError(_install_hint(e)) from e
 
     client = x402Client()
     register_exact_evm_client(client, EthAccountSigner(_account(private_key)), networks=network,

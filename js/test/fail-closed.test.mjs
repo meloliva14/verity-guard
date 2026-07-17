@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { VerityResult, formatVerdict, verdictProblem } from "../dist/index.js";
+import { VerityClient, VerityResult, formatVerdict, verdictProblem } from "../dist/index.js";
 import { guardToolCall } from "../dist/vercel.js";
 
 const mk = (raw) => new VerityResult(raw);
@@ -118,4 +118,48 @@ test("a promise handed BACK from guard() is awaited, so it is a real verdict", a
   assert.equal(r.problem, undefined);
   assert.equal(r.blocked, true);
   assert.equal(r.allowed, false);
+});
+
+/** decisionIs: the safe comparison, at parity with Python's decision_is. */
+test("decisionIs normalizes, and an absent decision matches nothing", () => {
+  const inj = mk({ decision: "INJECTION", risk: 0.97 });
+  assert.equal(verdictProblem(inj), undefined, "normalized => admitted as a real verdict");
+  assert.equal(inj.decisionIs("injection", "suspicious"), true, "'INJECTION' must trip the screen");
+  assert.equal(mk({ decision: " Review " }).decisionIs("review"), true);
+  // CONTROL: normalizing must not make everything match everything.
+  assert.equal(mk({ decision: "allow" }).decisionIs("review"), false);
+  assert.equal(mk({ decision: "allow" }).decisionIs("allow"), true);
+  // No verdict matches nothing — including the empty name.
+  for (const raw of [{}, { decision: null }, { error: "down" }]) {
+    assert.equal(mk(raw).decisionNorm, "");
+    assert.equal(mk(raw).decisionIs("review"), false);
+    assert.equal(mk(raw).decisionIs(""), false, "no verdict must not match an empty name");
+  }
+});
+
+/**
+ * timeoutMs means MILLISECONDS.
+ *
+ * It was `(opts.timeoutMs ?? 90) * 1000` — named ms, interpreted as seconds, so every caller
+ * was off by 1000x. It hid because the default (90 -> 90s) was sane and nothing asserted the
+ * unit. The OpenClaw plugin passed 8_000 expecting 8s and silently got 2h13m, which made its
+ * documented onUnavailable posture unreachable. Measured, not reasoned about.
+ */
+test("timeoutMs is milliseconds, not seconds", async () => {
+  // Honors the AbortSignal the client passes — a fake fetch that IGNORES it would hang
+  // forever no matter what the unit is, and prove nothing.
+  const hang = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(init.signal.reason));
+    });
+  const v = new VerityClient({ fetch: hang, timeoutMs: 300 });
+  const t0 = Date.now();
+  const res = await v.guard("anything");
+  const elapsed = Date.now() - t0;
+  // 300ms means 300ms. Under the old code this was 300_000ms and this test would time out.
+  assert.ok(elapsed < 3000, `aborted after ${elapsed}ms — timeoutMs is not being read as ms`);
+  assert.ok(elapsed >= 250, `aborted after only ${elapsed}ms — suspiciously early`);
+  // And a timeout is NOT a verdict.
+  assert.ok(verdictProblem(res), "a timed-out call must carry a problem, never a silent pass");
+  assert.equal(res.allowed, false);
 });

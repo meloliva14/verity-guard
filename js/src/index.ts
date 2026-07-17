@@ -46,6 +46,20 @@ export class VerityResult {
    *  consults, so `"BLOCK"` or `" block"` must never compare unequal to `"block"`, read as
    *  not-blocked, and execute the very action the verdict meant to stop. */
   private get norm(): string { const d = this.decision; return typeof d === "string" ? d.trim().toLowerCase() : ""; }
+  /** The decision, case- and whitespace-normalized. `""` when there is no decision. */
+  get decisionNorm(): string { return this.norm; }
+  /**
+   * True if the decision is any of `names`, compared normalized.
+   *
+   * Use this for EVERY decision comparison. `res.decision === "review"` reopens the exact
+   * hole `norm` exists to close — and `verdictProblem` normalizes before its allowlist check,
+   * so a case variant is ADMITTED as a genuine verdict and then sails past the comparison
+   * that was supposed to catch it. (The Python adapters shipped that bug on four gates,
+   * including the prompt-injection tripwire.)
+   */
+  decisionIs(...names: string[]): boolean {
+    return this.norm !== "" && names.some((n) => n.trim().toLowerCase() === this.norm);
+  }
   get allowed(): boolean { return ["allow", "publish", "clean", "supported"].includes(this.norm); }
   get blocked(): boolean { return this.norm === "block"; }
   get flagged(): boolean { return !this.allowed; }
@@ -56,6 +70,7 @@ export interface VerityOptions {
   fetch?: typeof fetch;
   engine?: string;
   suite?: string;
+  /** Per-call budget in MILLISECONDS. Default 90_000 (90s — a grounded verify does live web work). */
   timeoutMs?: number;
   /** Routing tag sent as X-Verity-Ref; reserved for a future referral program, never changes price/verdict. */
   affiliateId?: string;
@@ -81,7 +96,14 @@ export class VerityClient {
     this.f = opts.fetch ?? fetch;
     this.engine = (opts.engine ?? ENGINE_DEFAULT).replace(/\/+$/, "");
     this.suite = (opts.suite ?? SUITE_DEFAULT).replace(/\/+$/, "");
-    this.timeoutMs = (opts.timeoutMs ?? 90) * 1000;
+    // Milliseconds, as the name says. This used to be `(opts.timeoutMs ?? 90) * 1000` — the
+    // option was named `timeoutMs` and interpreted as SECONDS, so every caller was off by
+    // 1000x. It hid because the default (90 -> 90s) was sane and nobody passed the option;
+    // it surfaced when the OpenClaw plugin passed a considered 8_000ms budget and silently
+    // got 8,000,000ms (2h13m) — long enough that its own abort could never fire, which made
+    // the plugin's documented `onUnavailable` posture unreachable in every configuration.
+    // Only 0.1.0 is on npm, so fixing the meaning now costs nothing later.
+    this.timeoutMs = opts.timeoutMs ?? 90_000;
     this.affiliateId = opts.affiliateId;
   }
 

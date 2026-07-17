@@ -37,13 +37,22 @@ langgraph = ["langgraph>=0.2"]
 crewai = ["crewai>=0.60"]
 openai-agents = ["openai-agents>=0.0.1"]
 # Convenience x402 payer (BYO wallet key). You can also pass any x402-wrapped client.
+#
+# `x402[evm]`, NOT bare `x402`: payer.py imports x402.mechanisms.evm, and x402 only declares
+# web3/eth-abi/eth-keys/eth-utils under its OWN `evm` extra. With bare `x402`, web3 is never
+# installed and `pip install verity-guard[x402]` produced a payer that raised ImportError —
+# whose message told you to run `pip install 'verity-guard[x402]'`, i.e. the command you had
+# just run. The whole Python money path was dead on arrival for every user.
+# It passed locally ONLY because this repo's venv also holds the ENGINE's deps, which pin
+# x402[fastapi,evm,extensions] — the venv masked it. Verified in a CLEAN venv both ways.
+#
 # FLOOR IS 2.15, NOT >=0.1: the x402 1.x/0.x line is the *v1 protocol* (challenge in the
 # response body). VerityLayer speaks v2 (challenge in the `payment-required` header, empty
 # body), so a v1 client cannot read our 402 at all — and none of the APIs payer.py imports
 # (x402ClientSync, client_base.max_amount, mechanisms.evm) exist before 2.x. `>=0.1` let
 # pip satisfy this extra with a client that could never pay us. 2.15.0 is the version the
 # payer is verified against live, and the version the engine pins.
-x402 = ["x402>=2.15,<3", "eth-account>=0.11"]
+x402 = ["x402[evm]>=2.15,<3", "eth-account>=0.11"]
 all = ["langchain-core>=0.2", "langgraph>=0.2", "crewai>=0.60", "openai-agents>=0.0.1"]
 
 [tool.hatch.build.targets.wheel]

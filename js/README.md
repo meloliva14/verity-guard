@@ -7,7 +7,7 @@ Your agent is about to spend, send, delete, or publish. `@veritylayer/guard` ask
 > Not "we signed a receipt that a call happened." **A re-verifiable *verdict*** — cryptographic proof that an action was independently judged safe, or a claim checked and supported. Fail-closed across guarding actions, verifying facts, detecting prompt-injection, and redacting PII.
 
 - 🔒 **Fail-closed** — unsure ⇒ `review`/`block`, never a confident wrong `allow`.
-- 🧾 **Ed25519-signed verdicts** — `verifyReceipt()` checks one for **free**, forever, offline.
+- 🧾 **Ed25519-signed verdicts** — every receipt verifies **offline** against our published key at [`/.well-known/verity-pubkey.json`](https://api.veritylayer.dev/.well-known/verity-pubkey.json), forever, without us. `verifyReceipt()` is the convenient **free** live check (it POSTs to the issuer — use the key directly if you want an independent one).
 - 🔑 **Keyless by default** — the core client holds no wallet and never pays silently. Paid routes answer [x402](https://x402.org); opt in to `x402Payer` to settle them, with a **spend cap and a chain pin** so a hostile 402 can't name its own price.
 - 🧩 **Zero runtime deps** for the core client (uses global `fetch`, Node 18+).
 
@@ -40,7 +40,8 @@ console.log(res.saferAlternative);         // -> "Halt payment. Cross-verify…"
 
 if (res.receipt) {
   const check = await v.verifyReceipt(res.receipt);
-  console.log(check.valid);                 // -> true (free, independent, offline-checkable)
+  console.log(check.valid);                 // -> true (free live check; the receipt itself
+                                            //    verifies offline against our published key)
 }
 ```
 
@@ -114,7 +115,7 @@ import { VerityClient } from "@veritylayer/guard";
 import { verityGuardTool } from "@veritylayer/guard/vercel";
 import { generateText } from "ai";
 
-const v = new VerityClient({ fetch: myX402Fetch });
+const v = new VerityClient({ fetch: await x402Payer(process.env.WALLET_KEY!) });
 
 await generateText({
   model, prompt,
@@ -142,13 +143,24 @@ for (const call of pendingToolCalls) {
 | Method | Answers | Tier `quick` |
 |---|---|---|
 | `guard(action, opts)` | proceed? `allow / review / block` | $0.02 |
-| `verify(claim, opts)` | true? `supported / unsupported / uncertain` (grounded, signed) | $0.02–$0.35 |
+| `verify(claim, opts)` | true? `supported / unsupported / uncertain` (signed) | **$0.25 by default** ⚠️ |
 | `detectInjection(content, opts)` | is this untrusted text an injection? | $0.02 |
 | `moderate(content, opts)` | safe to publish? | $0.02 |
 | `redact(payload, opts)` | any PII/secrets? (returns redacted copy) | $0.02 |
 | `verifyReceipt(receipt)` | is this signed verdict authentic? | **free** |
 
-Every call returns a `VerityResult` with `.decision`, `.risk`, `.allowed`, `.blocked`, `.flagged`, `.reasons`, `.saferAlternative`, `.receipt`, `.price`, `.paymentRequired`, and `.raw` (the full untouched response).
+> ⚠️ **`verify()` is the one method that does not default to the $0.02 tier.** A bare
+> `v.verify(claim)` runs the **`grounded`** tier — live web citations, **$0.25**, 12.5× the
+> $0.02 anchored above. That is the right default for "is this claim true" (the cheap tier is
+> ungrounded and won't cite), but you should choose it, not discover it on a bill. Pass
+> `{ tier: "quick" }` for $0.02 or `{ tier: "pro" }` for $0.35. The same default applies to
+> `verityVerifyTool`, which the **model** invokes — so the model controls how many $0.25 calls
+> you make. Every price is disclosed in the 402 before anything is signed, and `x402Payer`'s
+> $1.00 cap bounds a single call regardless.
+
+Every call returns a `VerityResult` with `.decision`, `.decisionIs()`, `.risk`, `.allowed`, `.blocked`, `.flagged`, `.reasons`, `.saferAlternative`, `.receipt`, `.price`, `.paymentRequired`, and `.raw` (the full untouched response).
+
+Compare decisions with `.decisionIs("review")`, never `=== "review"` — a case variant compares unequal and silently skips your branch.
 
 ## Doctrine
 Fail-closed · evidence never invented · `allow`/`review`/`block` priced identically (no block-to-bill) · disclosed pay-per-use via x402 · holds no key, never charges silently.

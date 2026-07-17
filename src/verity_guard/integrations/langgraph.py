@@ -50,7 +50,7 @@ class GuardedToolNode:
         self._review_blocks = review_blocks
 
     def _blocked(self, res: Any) -> bool:
-        return res.blocked or (self._review_blocks and res.decision == "review")
+        return res.blocked or (self._review_blocks and res.decision_is("review"))
 
     def _tool_message(self, content: str, tool_call_id: str, name: str) -> Any:
         from langchain_core.messages import ToolMessage

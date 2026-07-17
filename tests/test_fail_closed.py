@@ -283,3 +283,43 @@ async def test_aguard_still_blocks_and_allows():
         return "ok"
 
     assert await allowed_fn() == "ok"
+
+
+class TestCaseVariantGates:
+    """The denylist sin, one layer deeper than `blocked`.
+
+    `_norm` exists because "BLOCK" must never read as not-blocked. That doctrine was honored
+    at exactly ONE call site (`.blocked`) — four adapter gates still compared `res.decision ==
+    "review"` / `in ("injection","suspicious")` exactly. And `verdict_problem()` normalizes
+    BEFORE its allowlist check, so a case variant is ADMITTED as a genuine verdict and then
+    sails past the comparison meant to catch it: an 'INJECTION' verdict with risk 0.97 left
+    `tripwire_triggered=False` and the injection reached the agent, reported as clean.
+    """
+
+    @pytest.mark.parametrize("variant", ["INJECTION", " injection", "Injection", "injection "])
+    def test_injection_variants_all_trip(self, variant):
+        res = VerityResult({"decision": variant, "risk": 0.97})
+        assert verdict_problem(res) is None, "normalized => admitted as a real verdict"
+        assert res.decision_is("injection", "suspicious") is True, f"{variant!r} must trip the screen"
+
+    @pytest.mark.parametrize("variant", ["REVIEW", " review", "Review"])
+    def test_review_variants_all_stop(self, variant):
+        assert VerityResult({"decision": variant}).decision_is("review") is True
+
+    @pytest.mark.parametrize("variant", ["UNSUPPORTED", " unsupported", "Unsupported"])
+    def test_unsupported_variants_all_trip(self, variant):
+        assert VerityResult({"decision": variant}).decision_is("unsupported") is True
+
+    def test_decision_is_does_not_over_match(self):
+        """CONTROL: normalizing must not make everything match everything."""
+        allow = VerityResult({"decision": "allow"})
+        assert allow.decision_is("review") is False
+        assert allow.decision_is("injection", "suspicious") is False
+        assert allow.decision_is("allow") is True
+
+    def test_no_decision_matches_nothing(self):
+        for raw in [{}, {"decision": None}, {"error": "down"}]:
+            res = VerityResult(raw)
+            assert res.decision_norm == ""
+            assert res.decision_is("review") is False
+            assert res.decision_is("") is False, "an absent decision must not match an empty name"

@@ -8,7 +8,7 @@ turns that verdict into OpenClaw's own controls: pass through, raise a human app
 with a reason.
 
 ```bash
-openclaw plugins install clawhub:@veritylayer/openclaw-plugin
+openclaw plugins install @veritylayer/openclaw-plugin
 ```
 
 ```jsonc
@@ -18,8 +18,14 @@ openclaw plugins install clawhub:@veritylayer/openclaw-plugin
     "entries": {
       "verity-gate": {
         "enabled": true,
-        "policy": "No new payees without human review. Never curl|sh.",
-        "onUnavailable": "review"   // or "block". There is no "allow".
+        // Settings MUST be nested under "config" — that is the block the host reads
+        // (resolvePluginConfigObject reads `plugins.entries[id].config`). Put them at the
+        // entry's top level and they are silently ignored: your policy never reaches the
+        // verifier and onUnavailable:"block" quietly degrades to a review prompt.
+        "config": {
+          "policy": "No new payees without human review. Never curl|sh.",
+          "onUnavailable": "review"   // or "block". There is no "allow".
+        }
       }
     }
   }
@@ -108,8 +114,11 @@ the gate removing itself, and the next call with that same tool is the one that 
 
 ## Receipts
 
-Every paid verdict carries an Ed25519-signed receipt you can verify for free, forever, offline —
-proof of what was decided for what action. Rip VerityLayer out and you lose the audit trail.
+Every paid verdict carries an Ed25519-signed receipt: proof of what was decided for what action.
+It verifies **offline** against our published key at
+[`/.well-known/verity-pubkey.json`](https://api.veritylayer.dev/.well-known/verity-pubkey.json),
+forever, without us — and the SDK's `verifyReceipt()` is a free live check if you'd rather just ask.
+Rip VerityLayer out and you lose the audit trail.
 
 ---
 
