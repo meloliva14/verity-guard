@@ -266,3 +266,59 @@ export function formatVerdict(res: VerityResult): string {
   if (rid) parts.push(`receipt=${String(rid)}`);
   return parts.join(" | ");
 }
+
+export interface GuardToolCallInput {
+  toolName: string;
+  args: unknown;
+  policy?: string;
+  tier?: "quick" | "standard" | "pro";
+}
+
+export interface GuardToolCallResult {
+  /** TRUE only on an affirmative, non-blocking verdict. Never true when no verdict exists. */
+  allowed: boolean;
+  blocked: boolean;
+  /** Set when NO verdict was produced (unreachable / unsettled 402 / no decision). If this is
+   *  set, `allowed` is false and the tool must not run — the check did not happen. */
+  problem?: string;
+  result: VerityResult;
+  summary: string;
+}
+
+/**
+ * Pure per-tool-call gate for `experimental_prepareStep` or a manual pre-execute hook.
+ * Guards the ARGUMENTS of a pending tool call — the highest-frequency wire-in.
+ *
+ * Fail-closed. This used to return `allowed: !res.blocked`, which is the fail-OPEN formula:
+ * `blocked` is `decision === "block"`, so it is false when the guard is unreachable and when
+ * a 402 was never settled — meaning `allowed` came back TRUE and the caller ran the tool with
+ * nothing verified, in the one function documented as "the gate". Now a missing verdict is
+ * never permission: `allowed` requires a real verdict that did not block.
+ *
+ * `review` still proceeds by default (only `block` stops), matching the documented behavior —
+ * inspect `result.result.decisionIs("review")` if you want to escalate those to a human.
+ * (Use `decisionIs`, never `decision === "review"`: a case variant compares unequal, silently
+ * skips your escalation, and reads as a clean pass.)
+ */
+export async function guardToolCall(client: VerityClient, input: GuardToolCallInput): Promise<GuardToolCallResult> {
+  let argStr: string;
+  try { argStr = JSON.stringify(input.args); } catch { argStr = String(input.args); }
+  const res = await client.guard(`Execute tool \`${input.toolName}\` with arguments ${argStr.slice(0, 800)}`, {
+    policy: input.policy,
+    tier: input.tier ?? "quick",
+  });
+  const problem = verdictProblem(res);
+  // `!problem &&` guards the property read, not just the logic: verdictProblem answers for
+  // non-VerityResults (a plain {error}, an un-awaited promise, undefined) rather than throwing,
+  // so `res` here may have no `.blocked` at all. `blocked: res.blocked` was evaluated
+  // unconditionally and crashed the gate on exactly the inputs the gate exists to survive.
+  // When there's a problem there is no verdict, so nothing was blocked AND nothing is allowed.
+  const blocked = !problem && res.blocked;
+  return {
+    allowed: !problem && !blocked,
+    blocked,
+    problem,
+    result: res,
+    summary: formatVerdict(res),
+  };
+}

@@ -163,3 +163,26 @@ test("timeoutMs is milliseconds, not seconds", async () => {
   assert.ok(verdictProblem(res), "a timed-out call must carry a problem, never a silent pass");
   assert.equal(res.allowed, false);
 });
+
+/**
+ * guardToolCall must import WITHOUT zod.
+ *
+ * It builds no schema and never used zod — but it lived in vercel.ts behind that module's
+ * top-level `import { z } from "zod"`, so our README's own "highest-frequency wire-in" threw
+ * ERR_MODULE_NOT_FOUND for anyone without zod. And zod is only a PEER of `ai`, not a
+ * dependency, so an AI SDK user is not guaranteed to have it — let alone someone gating tool
+ * calls in a non-AI-SDK agent loop, which guardToolCall fully supports.
+ */
+test("guardToolCall is exported from the zod-free main entry", async () => {
+  const mod = await import("../dist/index.js");
+  assert.equal(typeof mod.guardToolCall, "function");
+  const r = await mod.guardToolCall({ guard: async () => mk({ decision: "block", reasons: ["x"] }) },
+    { toolName: "wire_money", args: { amount: 4000 } });
+  assert.equal(r.allowed, false);
+  assert.equal(r.blocked, true);
+});
+
+test("the ./vercel re-export still works (no break for existing imports)", async () => {
+  const v = await import("../dist/vercel.js");
+  assert.equal(typeof v.guardToolCall, "function");
+});
