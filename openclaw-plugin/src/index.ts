@@ -46,7 +46,7 @@ import type {
   PluginHookBeforeToolCallEvent,
   PluginHookBeforeToolCallResult,
 } from "openclaw/plugin-sdk/types";
-import { VerityClient, VerityResult, verdictProblem, type Tier } from "@veritylayer/guard";
+import { VerityClient, VerityResult, verdictProblem, type CheckTier } from "@veritylayer/guard";
 import { x402Payer } from "@veritylayer/guard/payer";
 
 /**
@@ -63,7 +63,7 @@ type Unavailable = "review" | "block";
 interface GateConfig {
   gatedTools?: string[];
   policy?: string;
-  tier?: "quick" | "standard" | "pro";
+  tier?: CheckTier;   // the suite ladder — `grounded` belongs to verify(), not guard()
   timeoutMs?: number;
   /** What to do when NO verdict exists (down, unpaid, malformed). Never "allow" — that isn't offered. */
   onUnavailable?: Unavailable;
@@ -189,7 +189,7 @@ type PluginEntry = {
 
 /** The one call the gate needs. Narrowed so tests can drive the handler without a network. */
 export interface Guarder {
-  guard(action: string, opts: { policy?: string; tier?: Tier }): Promise<unknown>;
+  guard(action: string, opts: { policy?: string; tier?: CheckTier }): Promise<unknown>;
 }
 
 /**
