@@ -68,7 +68,7 @@ verifies every agent-initiated `exec` / `write` / `edit` / `apply_patch` / `proc
 `code_execution` / `terminal` call and maps the verdict onto OpenClaw's own controls.
 
 ```bash
-openclaw plugins install clawhub:@veritylayer/openclaw-plugin
+openclaw plugins install @veritylayer/openclaw-plugin
 ```
 
 It holds the same claim boundary this file documents, and takes the fail-closed question
