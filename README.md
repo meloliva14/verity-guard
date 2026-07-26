@@ -13,7 +13,7 @@ Your agent is about to wire money, send an email, run `rm -rf`, or publish somet
 
 Live now: `guard_action` from **$0.02/call**. Full wire-in guide → **https://veritylayer.dev/guard**
 
-> **Node / TypeScript?** `npm i @veritylayer/guard` — the same keyless client plus a Vercel AI SDK adapter. Source lives in [`js/`](js/).
+> **Node / TypeScript?** `npm i @veritylayer/guard` — the same keyless client plus a Vercel AI SDK adapter. Source lives in [`js/`](https://github.com/meloliva14/verity-guard/blob/main/js).
 
 ---
 
@@ -175,6 +175,10 @@ server whether our own signature is good -- convenient, but that is the issuer v
 itself. You do not have to accept that.
 
 ```bash
+# The two verifiers are repo files, NOT part of the installed wheel -- grab either one:
+curl -O https://raw.githubusercontent.com/meloliva14/verity-guard/main/verify_receipt.py
+curl -O https://raw.githubusercontent.com/meloliva14/verity-guard/main/verify_receipt.js
+
 curl -o receipt.json https://api.veritylayer.dev/receipt/selftest
 curl -o pubkey.json  https://api.veritylayer.dev/.well-known/verity-pubkey.json
 
@@ -182,9 +186,14 @@ python verify_receipt.py receipt.json pubkey.json     # stdlib + cryptography
 node   verify_receipt.js receipt.json pubkey.json     # zero dependencies
 ```
 
-Both scripts live in this repo, import nothing from VerityLayer, and make no network call at
-verification time. They deliberately do not share code with the service that signs -- if the
-two agreed because they were the same code, that would prove nothing.
+Both scripts import nothing from VerityLayer and make no network call at verification time.
+They deliberately do not share code with the service that signs -- if the two agreed because
+they were the same code, that would prove nothing.
+
+They ship in the sdist and live in the repo, but they are **not** in the wheel that `pip
+install` resolves to, because the wheel is scoped to the package directory. That is why the
+commands above fetch them rather than assuming you have them. `verify_receipt_offline()`
+below *is* installed.
 
 In-process, if you already use this package:
 
@@ -202,7 +211,7 @@ says nothing about whether the receipt vouches for the action you are about to t
 receipt over some *other* claim verifies perfectly. Pass `claim=` to check that binding, or
 send `{"receipt": ..., "claim": ...}` to `POST /receipt/verify` and read the `bound` field.
 
-The canonicalization is specified in [RECEIPTS.md](RECEIPTS.md), including the two places it
+The canonicalization is specified in [RECEIPTS.md](https://github.com/meloliva14/verity-guard/blob/main/RECEIPTS.md), including the two places it
 deliberately diverges from RFC 8785. Those are named rather than left for you to hit.
 
 ## Doctrine
