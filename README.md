@@ -168,6 +168,43 @@ agent = Agent(role="Treasurer", tools=[guard_tool])
 
 Every result is a `VerityResult` (a `dict` subclass — future fields never get dropped) with helpers: `.decision`, `.risk`, `.allowed`, `.blocked`, `.flagged`, `.reasons`, `.safer_alternative`, `.receipt`, `.price`, `.payment_required`.
 
+## Verify a receipt without trusting us
+
+Every paid verdict ships an Ed25519-signed receipt. `VerityClient.verify_receipt()` asks our
+server whether our own signature is good -- convenient, but that is the issuer vouching for
+itself. You do not have to accept that.
+
+```bash
+curl -o receipt.json https://api.veritylayer.dev/receipt/selftest
+curl -o pubkey.json  https://api.veritylayer.dev/.well-known/verity-pubkey.json
+
+python verify_receipt.py receipt.json pubkey.json     # stdlib + cryptography
+node   verify_receipt.js receipt.json pubkey.json     # zero dependencies
+```
+
+Both scripts live in this repo, import nothing from VerityLayer, and make no network call at
+verification time. They deliberately do not share code with the service that signs -- if the
+two agreed because they were the same code, that would prove nothing.
+
+In-process, if you already use this package:
+
+```python
+from verity_guard import verify_receipt_offline
+ok, why = verify_receipt_offline(receipt, public_key_hex, claim="the claim you care about")
+```
+
+Install with `pip install "verity-guard[offline]"` -- `cryptography` is optional because most
+users only want the guard. A missing verifier **raises**; it is never reported as an invalid
+signature, because "I could not check" and "this is forged" must never render the same.
+
+**A valid signature is not permission.** It proves the content was signed and is unaltered. It
+says nothing about whether the receipt vouches for the action you are about to take -- a real
+receipt over some *other* claim verifies perfectly. Pass `claim=` to check that binding, or
+send `{"receipt": ..., "claim": ...}` to `POST /receipt/verify` and read the `bound` field.
+
+The canonicalization is specified in [RECEIPTS.md](RECEIPTS.md), including the two places it
+deliberately diverges from RFC 8785. Those are named rather than left for you to hit.
+
 ## Doctrine
 Fail-closed (uncertainty → the safe verdict, never a confident wrong one) · evidence is never invented · `allow`/`review`/`block` are **priced identically** (no block-to-bill) · pricing is disclosed and paid per use via x402 · VerityLayer holds no key and never charges silently.
 

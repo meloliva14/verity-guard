@@ -36,6 +36,10 @@ langchain = ["langchain-core>=0.2"]
 langgraph = ["langgraph>=0.2"]
 crewai = ["crewai>=0.60"]
 openai-agents = ["openai-agents>=0.0.1"]
+# Verify a signed receipt WITHOUT calling us. `cryptography` stays optional because most
+# users only want the guard, and a missing verifier must never be reported as an invalid
+# signature -- verify_receipt_offline raises rather than returning False.
+offline = ["cryptography>=42"]
 # Convenience x402 payer (BYO wallet key). You can also pass any x402-wrapped client.
 #
 # `x402[evm]`, NOT bare `x402`: payer.py imports x402.mechanisms.evm, and x402 only declares

@@ -37,6 +37,11 @@ from .payer import async_x402_payer, wallet_address, x402_payer
 
 __version__ = "0.2.2"
 
+from .offline import (  # noqa: E402
+    OfflineVerifyUnavailable,
+    verify_receipt_offline,
+)
+
 __all__ = [
     "VerityClient",
     "AsyncVerityClient",
@@ -48,6 +53,8 @@ __all__ = [
     "BlockedAction",
     "GuardUnavailable",
     "verdict_problem",
+    "verify_receipt_offline",
+    "OfflineVerifyUnavailable",
     "guard",
     "aguard",
     "format_verdict",
