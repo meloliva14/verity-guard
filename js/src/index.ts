@@ -43,6 +43,14 @@ const ROUTES: Record<string, { host: Host; tiers: Record<string, [string, string
 };
 
 /** The raw verdict object plus typed convenience accessors. `.raw` always holds every field. */
+/** base64 -> UTF-8 string, portable across Node, browsers and edge runtimes.
+ *  `Buffer` does not exist on edge/Vercel; bare `atob` mangles any non-ASCII byte. */
+function b64utf8(b64: string): string {
+  if (typeof Buffer !== "undefined") return Buffer.from(b64, "base64").toString("utf8");
+  const bin = atob(b64);
+  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
+}
+
 export class VerityResult {
   constructor(public readonly raw: Json) {}
   get decision(): string | undefined { return (this.raw.decision as string) ?? (this.raw.verdict as string); }
@@ -158,8 +166,20 @@ export class VerityClient {
       return new VerityResult({ error: `verity_unreachable: ${String(e).slice(0, 160)}`, endpoint: url, price });
     }
     if (r.status === 402) {
+      // x402 **v2** puts the challenge in the base64 `payment-required` HEADER and leaves the
+      // body `{}` — which is what our own engine serves. Reading the body alone handed callers
+      // `challenge: {}`: no price, no payTo, no accepts[], nothing to settle against. Header
+      // first; the body is the v1 fallback.
       let challenge: unknown;
-      try { challenge = JSON.parse(text); } catch { challenge = text.slice(0, 1000); }
+      let raw: string | null = null;
+      try { raw = r.headers?.get?.("payment-required") ?? r.headers?.get?.("x-payment") ?? null; } catch { raw = null; }
+      if (raw) {
+        try { challenge = JSON.parse(b64utf8(raw)); }
+        catch { challenge = raw; }  // undecodable, but still more useful than {}
+      }
+      if (challenge === undefined) {
+        try { challenge = JSON.parse(text); } catch { challenge = text.slice(0, 1000); }
+      }
       return new VerityResult({
         payment_required: true, price, currency: "USDC", network: "Base mainnet (eip155:8453)",
         detail: `This VerityLayer check is paid per call via x402 (${price} USDC on Base). ` +

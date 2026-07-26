@@ -227,3 +227,44 @@ test("REGRESSION: a body that dies mid-read is unreachable, not an exception", a
   assert.ok(verdictProblem(res), "a failed body read must produce a problem, not an exception");
   assert.equal(res.allowed, false);
 });
+
+/**
+ * A 402 must surface the REAL challenge, not an empty object.
+ *
+ * x402 v2 carries the challenge in the base64 `payment-required` header and leaves the body
+ * `{}` — which is exactly what api.veritylayer.dev serves. This client read the body only, so
+ * `payment_required` results arrived with `challenge: {}`: no price, no payTo, no accepts[],
+ * nothing to settle against. The module docstring above has always said v2/header; only the
+ * code disagreed, and the README's keyless snippet is the first path a new developer walks.
+ */
+test("REGRESSION: a v2 402 surfaces the header challenge, not the empty body", async () => {
+  const challenge = {
+    x402Version: 2,
+    accepts: [{ scheme: "exact", network: "eip155:8453", amount: "250000",
+                asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                payTo: "0x89d38023167bdA453BeD9F6CbF22dDd1EC5f70a7" }],
+  };
+  const b64 = Buffer.from(JSON.stringify(challenge)).toString("base64");
+  const v2 = async () => new Response("{}", {           // v2 body really is empty
+    status: 402,
+    headers: { "content-type": "application/json", "payment-required": b64 },
+  });
+  const res = await new VerityClient({ fetch: v2 }).verify("the moon is cheese");
+  assert.equal(res.paymentRequired, true);
+  const got = res.raw.challenge;
+  assert.ok(got && typeof got === "object", "challenge must be an object");
+  assert.equal(got.accepts?.[0]?.amount, "250000", "the caller must be able to see the price");
+  assert.equal(got.accepts?.[0]?.payTo, "0x89d38023167bdA453BeD9F6CbF22dDd1EC5f70a7");
+  // and it is still not a verdict
+  assert.ok(verdictProblem(res));
+  assert.equal(res.allowed, false);
+});
+
+test("a v1 402 (challenge in the body, no header) still works", async () => {
+  const body = { x402Version: 1, accepts: [{ network: "base", maxAmountRequired: "20000" }] };
+  const v1 = async () => new Response(JSON.stringify(body), {
+    status: 402, headers: { "content-type": "application/json" },
+  });
+  const res = await new VerityClient({ fetch: v1 }).verify("x");
+  assert.equal(res.raw.challenge?.accepts?.[0]?.maxAmountRequired, "20000", "v1 fallback broke");
+});

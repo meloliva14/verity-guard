@@ -15,6 +15,7 @@ for FREE against VerityLayer's published public key.
 """
 from __future__ import annotations
 
+import base64
 import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Union
@@ -172,12 +173,33 @@ def _prepare(kind: str, tier: Optional[str], engine: str, suite: str, fields: Ma
     return _Prepared(url=base + path, body=body, price=price)
 
 
-def _finish(price: str, status: int, text: str) -> VerityResult:
+def _finish(price: str, status: int, text: str, headers: Any = None) -> VerityResult:
     if status == 402:
-        try:
-            challenge: Any = json.loads(text)
-        except Exception:
-            challenge = text[:1000]
+        # x402 **v2** carries the challenge in the base64 `payment-required` HEADER and leaves
+        # the body `{}` — which is exactly what our own engine serves. Parsing the body alone
+        # therefore handed the caller `challenge: {}`: no price, no payTo, no accepts[], nothing
+        # to settle against. The README's keyless snippet is the one path a new developer walks
+        # first, and it showed them an empty object. Header first, body only as the v1 fallback.
+        challenge: Any = None
+        raw = None
+        if headers is not None:
+            try:
+                get = getattr(headers, "get", None)
+                if callable(get):
+                    raw = get("payment-required") or get("x-payment")
+            except Exception:
+                raw = None
+        if raw:
+            try:
+                pad = "=" * (-len(raw) % 4)
+                challenge = json.loads(base64.b64decode(raw + pad))
+            except Exception:
+                challenge = raw  # undecodable, but still strictly more useful than {}
+        if challenge is None:
+            try:
+                challenge = json.loads(text)
+            except Exception:
+                challenge = text[:1000]
         return VerityResult({
             "payment_required": True,
             "price": price,
@@ -237,7 +259,7 @@ class VerityClient(_Base):
             r = self._http.post(p.url, json=p.body, headers=self._headers())
         except Exception as e:  # network/timeout — fail honestly, never fabricate a verdict
             return VerityResult({"error": f"verity_unreachable: {str(e)[:160]}", "endpoint": p.url, "price": p.price})
-        return _finish(p.price, r.status_code, r.text)
+        return _finish(p.price, r.status_code, r.text, r.headers)
 
     # ── the checks ────────────────────────────────────────────────────────────
     def guard(self, action: str, *, context: Optional[str] = None, policy: Optional[str] = None,
@@ -266,7 +288,7 @@ class VerityClient(_Base):
             r = self._http.post(self.engine + "/receipt/verify", json=body, headers=self._headers())
         except Exception as e:
             return VerityResult({"valid": False, "error": f"verity_unreachable: {str(e)[:160]}"})
-        return _finish("$0.00 (free)", r.status_code, r.text)
+        return _finish("$0.00 (free)", r.status_code, r.text, r.headers)
 
     def close(self) -> None:
         if self._owns:
@@ -302,7 +324,7 @@ class AsyncVerityClient(_Base):
             r = await self._http.post(p.url, json=p.body, headers=self._headers())
         except Exception as e:
             return VerityResult({"error": f"verity_unreachable: {str(e)[:160]}", "endpoint": p.url, "price": p.price})
-        return _finish(p.price, r.status_code, r.text)
+        return _finish(p.price, r.status_code, r.text, r.headers)
 
     async def guard(self, action: str, *, context: Optional[str] = None, policy: Optional[str] = None,
                     tier: Optional[str] = None) -> VerityResult:
@@ -330,7 +352,7 @@ class AsyncVerityClient(_Base):
             r = await self._http.post(self.engine + "/receipt/verify", json=body, headers=self._headers())
         except Exception as e:
             return VerityResult({"valid": False, "error": f"verity_unreachable: {str(e)[:160]}"})
-        return _finish("$0.00 (free)", r.status_code, r.text)
+        return _finish("$0.00 (free)", r.status_code, r.text, r.headers)
 
     async def aclose(self) -> None:
         if self._owns:
