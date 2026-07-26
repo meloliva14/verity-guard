@@ -79,7 +79,12 @@ def build_output_guardrail(client: Any, *, mode: str = "guard", tier: str = "qui
             if inspect.isawaitable(res):
                 res = await res
             problem = verdict_problem(res)
-            tripwire = True if problem else res.decision_is("unsupported")
+            # ALLOWLIST, not denylist. `decision_is("unsupported")` was a denylist, and the
+            # engine also emits "uncertain" — its own abstention. That verdict is a genuine
+            # verdict, so `problem` is None, and it is not "unsupported", so the tripwire did
+            # not trip and unverified output shipped. `flagged` is `not allowed`, i.e. trip on
+            # anything that is not affirmatively safe, which is what this product sells.
+            tripwire = True if problem else res.flagged
         else:
             res = await _guard_any(client, text, context="final agent output",
                                    policy=policy, tier=tier)
@@ -103,7 +108,10 @@ def build_input_guardrail(client: Any, *, tier: str = "quick") -> Any:
         if inspect.isawaitable(res):
             res = await res
         problem = verdict_problem(res)
-        tripwire = True if problem else res.decision_is("injection", "suspicious")
+        # Same fix as the output guardrail: enumerate what is SAFE, never what is unsafe.
+        # A denylist here silently admits any decision nobody thought to list — "uncertain"
+        # among them — which lets the input it could not clear reach the agent.
+        tripwire = True if problem else res.flagged
         info = _no_verdict_info(problem) if problem else dict(res)
         return GuardrailFunctionOutput(output_info=info, tripwire_triggered=tripwire)
 

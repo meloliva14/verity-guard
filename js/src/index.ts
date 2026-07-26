@@ -146,7 +146,17 @@ export class VerityClient {
     } catch (e) {
       return new VerityResult({ error: `verity_unreachable: ${String(e).slice(0, 160)}`, endpoint: url, price });
     }
-    const text = await r.text();
+    // Reading the body can fail on its own — a connection dropped after headers, or the
+    // timeout firing mid-stream. Outside the try, that threw straight past every fail-closed
+    // return in this method and out of `post()`, so callers that catch broadly around a guard
+    // would proceed with no verdict and no VerityResult to inspect. Same handling as a dead
+    // connection, because that is what it is.
+    let text: string;
+    try {
+      text = await r.text();
+    } catch (e) {
+      return new VerityResult({ error: `verity_unreachable: ${String(e).slice(0, 160)}`, endpoint: url, price });
+    }
     if (r.status === 402) {
       let challenge: unknown;
       try { challenge = JSON.parse(text); } catch { challenge = text.slice(0, 1000); }
@@ -156,6 +166,14 @@ export class VerityClient {
           "Settle the disclosed micro-payment with your x402 layer and retry. This client holds no key.",
         challenge,
       });
+    }
+    // Reject a non-2xx BEFORE parsing it as a verdict. A 500 whose body happens to be JSON
+    // was previously constructed into a VerityResult; `verdictProblem` does catch that for
+    // lacking a decision, but that leaves one chokepoint standing between an upstream error
+    // envelope and an action executing. Refuse it here as well — an error is not a verdict,
+    // whatever shape its body is in.
+    if (!r.ok) {
+      return new VerityResult({ error: `unexpected_status_${r.status}`, body: text.slice(0, 300), endpoint: url, price });
     }
     let data: unknown;
     try { data = JSON.parse(text); } catch { return new VerityResult({ error: `unexpected_status_${r.status}`, body: text.slice(0, 300), price }); }

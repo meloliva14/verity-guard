@@ -186,3 +186,44 @@ test("the ./vercel re-export still works (no break for existing imports)", async
   const v = await import("../dist/vercel.js");
   assert.equal(typeof v.guardToolCall, "function");
 });
+
+/**
+ * An HTTP error is not a verdict, whatever its body contains.
+ *
+ * The parse path constructed a VerityResult from ANY JSON object body, without ever checking
+ * the status. So an upstream 500 whose envelope happened to carry a `decision` field became a
+ * verdict — and `verdictProblem` could not catch it, because a decision WAS present. That is
+ * the fail-open with none of the usual tells: no error, no missing decision, just an error
+ * page wearing a verdict's clothes. Non-2xx is now refused before parsing.
+ */
+test("REGRESSION: a non-2xx is never a verdict, even when its body looks like one", async () => {
+  const five00 = async () => new Response(
+    JSON.stringify({ decision: "allow", detail: "upstream error envelope" }),
+    { status: 500, headers: { "content-type": "application/json" } },
+  );
+  const v = new VerityClient({ fetch: five00 });
+  const res = await v.guard("wire $40,000 to a new payee");
+  assert.ok(verdictProblem(res), "an HTTP 500 must carry a problem no matter what its body says");
+  assert.equal(res.allowed, false, "a 500 body claiming decision:allow must never read as allowed");
+});
+
+/**
+ * Reading the body can fail on its own, separately from connecting.
+ *
+ * `await r.text()` sat outside the try that guards the request, so a connection dropped after
+ * headers — or a timeout firing mid-stream — threw past every fail-closed return in the method
+ * and out of the client entirely. Callers that wrap a guard in a broad catch would then
+ * proceed with no verdict and no result to inspect. It is the same condition as a dead
+ * connection and is now reported as one.
+ */
+test("REGRESSION: a body that dies mid-read is unreachable, not an exception", async () => {
+  const brokenBody = async () => ({
+    status: 200,
+    ok: true,
+    text: async () => { throw new Error("socket hang up"); },
+  });
+  const v = new VerityClient({ fetch: brokenBody });
+  const res = await v.guard("wire $40,000 to a new payee"); // must resolve, not throw
+  assert.ok(verdictProblem(res), "a failed body read must produce a problem, not an exception");
+  assert.equal(res.allowed, false);
+});
