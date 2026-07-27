@@ -35,11 +35,17 @@ from .decorators import (
 )
 from .payer import async_x402_payer, wallet_address, x402_payer
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from .offline import (  # noqa: E402
     OfflineVerifyUnavailable,
     verify_receipt_offline,
+)
+from .authorize import (  # noqa: E402
+    AFFIRMATIVE,
+    ReceiptRejected,
+    check_receipt,
+    require_receipt,
 )
 
 __all__ = [
@@ -55,6 +61,10 @@ __all__ = [
     "verdict_problem",
     "verify_receipt_offline",
     "OfflineVerifyUnavailable",
+    "require_receipt",
+    "check_receipt",
+    "ReceiptRejected",
+    "AFFIRMATIVE",
     "guard",
     "aguard",
     "format_verdict",

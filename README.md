@@ -214,6 +214,54 @@ send `{"receipt": ..., "claim": ...}` to `POST /receipt/verify` and read the `bo
 The canonicalization is specified in [RECEIPTS.md](https://github.com/meloliva14/verity-guard/blob/main/RECEIPTS.md), including the two places it
 deliberately diverges from RFC 8785. Those are named rather than left for you to hit.
 
+## Make the receipt load-bearing
+
+Checking a signature and calling that "verified" is the mistake this exists to stop. A valid
+signature says *we signed this*. It does not say the receipt permits what you are about to do.
+Every one of these is a real signature that must not open the gate:
+
+| A genuine receipt that... | why it must still be refused |
+| --- | --- |
+| is about a **different claim** | you verified the wrong thing |
+| says `unsupported` | we checked, and it was false |
+| says `uncertain` | we checked, and we do not know |
+| was issued six weeks ago | true then; the world moved |
+| is a `test: true` self-test | proves signing works, vouches for nothing |
+| already authorized another action | replayed |
+
+```python
+from verity_guard import require_receipt, ReceiptRejected
+
+try:
+    require_receipt(receipt, PUBKEY, claim="Invoice 4417 is unpaid")
+except ReceiptRejected as e:
+    log.error("not authorized: %s", e.reason)   # machine-readable code, not English
+    raise
+
+send_dunning_email()   # unreachable unless the receipt vouches for exactly that claim
+```
+
+`claim` is required and has no default — there is deliberately no keyword-free path to a
+signature-only check, because that is the failure mode. Use `verify_receipt_offline` when a
+signature really is all you want to know.
+
+Defaults are the strict ones: only `supported` passes, receipts older than 15 minutes are
+stale, and self-test receipts are refused. Widen them explicitly — `accept=(...)`,
+`max_age_seconds=None`, `allow_test=True` — so loosening a gate is always something you can
+find in a diff. `accept` is an allowlist, so a verdict nobody anticipated is refused rather
+than tolerated.
+
+Pass any mutable set as `seen` to make receipts single-use. It is recorded only on success, so
+a receipt refused for being stale is not silently burned:
+
+```python
+require_receipt(r, PUBKEY, claim=c, seen=self.spent)   # second call raises [replayed]
+```
+
+`check_receipt(...)` is the same logic returning `(ok, reason, detail)` if you would rather
+branch than catch. Both still *raise* when `cryptography` is missing — "I could not check" and
+"I checked, and no" must never arrive in the same shape.
+
 ## Doctrine
 Fail-closed (uncertainty → the safe verdict, never a confident wrong one) · evidence is never invented · `allow`/`review`/`block` are **priced identically** (no block-to-bill) · pricing is disclosed and paid per use via x402 · VerityLayer holds no key and never charges silently.
 
