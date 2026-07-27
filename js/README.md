@@ -7,7 +7,7 @@ Your agent is about to spend, send, delete, or publish. `@veritylayer/guard` ask
 > Not "we signed a receipt that a call happened." **A re-verifiable *verdict*** — cryptographic proof that an action was independently judged safe, or a claim checked and supported. Fail-closed across guarding actions, verifying facts, detecting prompt-injection, and redacting PII.
 
 - 🔒 **Fail-closed** — unsure ⇒ `review`/`block`, never a confident wrong `allow`.
-- 🧾 **Ed25519-signed verdicts** — every receipt verifies **offline** against our published key at [`/.well-known/verity-pubkey.json`](https://api.veritylayer.dev/.well-known/verity-pubkey.json), forever, without us. `verifyReceipt()` is the convenient **free** live check, but it POSTs to the issuer — that is us vouching for our own signature. To check one yourself, with no network call and no code of ours in the path, use the zero-dependency [`verify_receipt.js`](https://github.com/meloliva14/verity-guard/blob/main/verify_receipt.js); the exact bytes that get signed are specified in [`RECEIPTS.md`](https://github.com/meloliva14/verity-guard/blob/main/RECEIPTS.md), including the two places it deliberately diverges from RFC 8785. Both are repo files — this npm package cannot contain them, since they sit above its package root.
+- 🧾 **Ed25519-signed verdicts** — every receipt verifies **offline** against our published key at [`/.well-known/verity-pubkey.json`](https://api.veritylayer.dev/.well-known/verity-pubkey.json), forever, without us. `verifyReceipt()` is a convenient **free** live check, but it POSTs to the issuer — that is us vouching for our own signature. **`verifyReceiptOffline()` ships in this package** and makes no network call at all, and **`requireReceipt()`** goes further: it refuses to let an action proceed unless the receipt is genuine, about *your* claim, affirmative, fresh, and unspent. Uses WebCrypto only, so it runs on Node 18.4+, Deno, Cloudflare Workers, Vercel edge and browsers.
 - 🔑 **Keyless by default** — the core client holds no wallet and never pays silently. Paid routes answer [x402](https://x402.org); opt in to `x402Payer` to settle them, with a **spend cap and a chain pin** so a hostile 402 can't name its own price.
 - 🧩 **Zero runtime deps** for the core client (uses global `fetch`, Node 18+).
 
@@ -163,6 +163,67 @@ for (const call of pendingToolCalls) {
 Every call returns a `VerityResult` with `.decision`, `.decisionIs()`, `.risk`, `.allowed`, `.blocked`, `.flagged`, `.reasons`, `.saferAlternative`, `.receipt`, `.price`, `.paymentRequired`, and `.raw` (the full untouched response).
 
 Compare decisions with `.decisionIs("review")`, never `=== "review"` — a case variant compares unequal and silently skips your branch.
+
+## Make the receipt load-bearing
+
+Checking a signature and calling that "verified" is the mistake this exists to stop. A valid
+signature says *we signed this*. It does not say the receipt permits what you are about to do.
+Every one of these is a real signature that must not open the gate:
+
+| A genuine receipt that... | why it must still be refused |
+| --- | --- |
+| is about a **different claim** | you verified the wrong thing |
+| says `unsupported` | we checked, and it was false |
+| says `uncertain` | we checked, and we do not know |
+| was issued six weeks ago | true then; the world moved |
+| is a `test: true` self-test | proves signing works, vouches for nothing |
+| already authorized another action | replayed |
+
+```ts
+import { requireReceipt, ReceiptRejected } from "@veritylayer/guard";
+
+try {
+  await requireReceipt(receipt, PUBKEY, { claim: "Invoice 4417 is unpaid" });
+} catch (e) {
+  if (e instanceof ReceiptRejected) console.error(e.reason);  // machine-readable, not English
+  throw;
+}
+
+await sendDunningEmail();   // unreachable unless the receipt vouches for exactly that claim
+```
+
+`claim` is required — there is deliberately no path to a signature-only check here, because
+that is the failure mode. Use `verifyReceiptOffline(receipt, pubkey)` when a signature really
+is all you want to know.
+
+Defaults are the strict ones: only `supported` passes, receipts older than 15 minutes are
+stale, and self-test receipts are refused. Widen them explicitly — `accept`, `maxAgeSeconds:
+null`, `allowTest: true` — so loosening a gate always shows up in a diff. `accept` is an
+allowlist, so a verdict nobody anticipated is refused rather than tolerated.
+
+Pass a `Set` as `seen` to make receipts single-use. It is written only on success, so a receipt
+refused for being stale is not silently burned:
+
+```ts
+await requireReceipt(r, PUBKEY, { claim, seen: this.spent });   // 2nd call throws [replayed]
+```
+
+`checkReceipt(...)` is the same logic returning `{ ok, reason, detail }` if you would rather
+branch than catch. Both still **throw** `OfflineVerifyUnavailable` when the runtime has no
+WebCrypto — "I could not check" and "I checked, and no" must never arrive in the same shape.
+
+**Runtime support.** WebCrypto only: no `node:crypto`, no `Buffer`, no dependencies. Works on
+Node 18.4+, Deno, Cloudflare Workers, Vercel edge and modern browsers. Everything is `async`
+because WebCrypto is. Import from `@veritylayer/guard/receipt` to get the verifier without the
+HTTP client.
+
+The signed bytes are specified in
+[RECEIPTS.md](https://github.com/meloliva14/verity-guard/blob/main/RECEIPTS.md), including the
+two places it deliberately diverges from RFC 8785. This implementation is independent of the
+Python one, and the test suite verifies a **Python-signed** fixture to prove they agree — if
+they agreed because they shared code, that would prove nothing.
+
+---
 
 ## Doctrine
 Fail-closed · evidence never invented · `allow`/`review`/`block` priced identically (no block-to-bill) · disclosed pay-per-use via x402 · holds no key, never charges silently.

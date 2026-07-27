@@ -360,3 +360,29 @@ export async function guardToolCall(client: VerityClient, input: GuardToolCallIn
     summary: formatVerdict(res),
   };
 }
+
+// --- signed receipts -----------------------------------------------------------------
+// Re-exported from the main entry so `verifyReceiptOffline` is findable by anyone who
+// already imported this package. Also available as `@veritylayer/guard/receipt` for edge
+// bundles that want the verifier without the HTTP client.
+//
+// Until now the JS package could obtain a receipt and had no way to check one, while its
+// README promised every verdict "verifies offline against our published key, without us".
+// That promise is now keepable in this language, not just in Python.
+export {
+  AFFIRMATIVE,
+  OfflineVerifyUnavailable,
+  ReceiptRejected,
+  canonicalBytes,
+  checkReceipt,
+  deriveKeyId,
+  requireReceipt,
+  verifyReceiptOffline,
+} from "./receipt.js";
+export type {
+  CheckResult,
+  OfflineResult,
+  Receipt,
+  RejectReason,
+  RequireReceiptOptions,
+} from "./receipt.js";

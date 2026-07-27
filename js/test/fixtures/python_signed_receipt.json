@@ -1,0 +1,22 @@
+{
+  "note": "Signed by the PYTHON implementation. The JS verifier must accept it unmodified.",
+  "public_key_hex": "c6012bbadc70c5f9fb22c2306f9a4da9df49b510c7c2c7678df102106fcce80c",
+  "claim": "Facture n°4417 est impayée — café ☕ 🧾",
+  "context": "Ledger export 2026-07",
+  "canonical_utf8_len": 438,
+  "receipt": {
+    "receipt_id": "fixture-0001",
+    "issued_at": "2026-07-27T00:00:00+00:00",
+    "service": "VerityLayer",
+    "endpoint": "/verify",
+    "model_tier": "grounded",
+    "claim_sha256": "b6420cb9aa4b668398d61361cf05952d9477d93988849a9ced60fc78fe9216e3",
+    "context_sha256": "cd514c185f7f94c4d44d24baf2ad8bfee3d252a6a1b32f212e67b8f82f18af00",
+    "verdict": "supported",
+    "confidence": 1,
+    "zeta_last_key": "sorts last",
+    "alpha_first_key": "sorts first",
+    "key_id": "ed25519:f3c4788a3b421350",
+    "signature": "8ffc25268746d84d29ccd975e295cab7989ce607aa5cac3c7ad55a31401b4e3c02ab6c871df16ab7ddc1b34b17b1bade5f2b482de26e6951854b0e2831af3306"
+  }
+}

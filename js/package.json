@@ -1,6 +1,6 @@
 {
   "name": "@veritylayer/guard",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "Fail-closed verify-before-you-act gate for AI agents. Keyless x402 client + Vercel AI SDK adapter. Signed, independently re-verifiable verdicts.",
   "type": "module",
   "main": "dist/index.js",
@@ -17,6 +17,10 @@
     "./payer": {
       "types": "./dist/payer.d.ts",
       "import": "./dist/payer.js"
+    },
+    "./receipt": {
+      "types": "./dist/receipt.d.ts",
+      "import": "./dist/receipt.js"
     },
     "./package.json": "./package.json"
   },
